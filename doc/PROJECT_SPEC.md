@@ -222,6 +222,8 @@ without affecting the host operating system.
 
 This makes the project completely software based.
 
+The kernel is implemented as a native C (C17) shared library compiled into the application process; with the low-level context-switch routine written in x86-64 Assembly.
+
 No custom hardware is required.
 
 No virtual machine is required.
@@ -229,6 +231,8 @@ No virtual machine is required.
 No bootloader is required.
 
 No custom kernel installation is required.
+
+The operating system logic compiles and runs inside the JARVIS application itself.
 
 ---
 
@@ -565,20 +569,30 @@ CPU   Process  Memory   FileSys   Device
 
 | Layer | Technology | Purpose |
 |---------|------------|----------|
-| Desktop Application | Electron | Package the OS as a desktop application |
-| Frontend | React + TypeScript | Complete Desktop Interface |
-| Styling | TailwindCSS | Modern futuristic UI |
-| Animations | Framer Motion | Smooth desktop animations |
+| Kernel | C (C17) | Implementation of every OS module as a native shared library |
+| Low-Level | x86-64 Assembly (NASM) | Context-switching register / PC save-restore stub |
+| Kernel ABI | cJSON (vendored) | JSON serialization across the kernel boundary |
+| Kernel Invocation | Python ctypes | FastAPI loads and calls the C kernel library |
 | Backend | FastAPI | Communication between GUI and Kernel |
-| Programming Language | Python | Kernel implementation |
+| Certification Layer | Pydantic | Request / response validation on the bridge |
+| Desktop Application | Electron | Package the OS as a desktop application |
+| Frontend | React 19 + TypeScript | Complete Desktop Interface |
+| Styling | TailwindCSS | Modern futuristic UI |
+| Components | shadcn/ui + Lucide | UI components and icons |
+| Animations | Framer Motion | Smooth desktop animations |
+| Notifications | Sonner | Toast notifications |
 | Database | SQLite | Persistent storage |
-| ORM | SQLAlchemy | Database interaction |
-| API | REST API | Communication between Frontend and Backend |
-| Voice Recognition | Web Speech API | Speech-to-Text |
-| Voice Output | Speech Synthesis API | Text-to-Speech |
-| AI Integration | Gemini API | Natural Language Understanding |
+| ORM | SQLAlchemy | Database interaction (bridge layer only) |
+| API | REST API + WebSocket | Commands and live updates between Frontend and Backend |
 | State Management | Zustand | Frontend State |
-| Charts | Chart.js | CPU and Memory graphs |
+| Charts | Recharts | CPU and Memory graphs |
+| Speech-to-Text | Faster-Whisper | Speech-to-Text |
+| Wake Word | OpenWakeWord | Always-on "Hey JARVIS" detection |
+| Text-to-Speech | pyttsx3 | Offline Voice Output |
+| AI Integration | Gemini API | Natural Language Understanding (reasoning only) |
+| Kernel Testing | Google Test | Unit tests for C kernel modules |
+| Backend Testing | pytest | Bridge and API tests |
+| Frontend Testing | Vitest + React Testing Library + Playwright | Component and end-to-end tests |
 
 ---
 
@@ -630,7 +644,7 @@ Everything the user sees.
 
 ## FastAPI
 
-FastAPI acts as the bridge between the GUI and the Kernel.
+FastAPI acts as the bridge between the GUI and the C Kernel.
 
 The frontend never directly modifies memory or processes.
 
@@ -643,22 +657,26 @@ React
 
 FastAPI
 
-↓
+↓ ctypes
 
-Kernel APIs
+C Kernel (native library)
 
 ↓
 
 Operating System
 ```
 
+FastAPI contains no operating system algorithms. It validates requests, forwards them to the kernel via its JSON ABI, and pushes kernel events to the frontend over WebSocket.
+
 ---
 
-## Python
+## C — The Kernel Language
 
-Python will be used to implement
+The kernel is implemented in **C (C17)** and compiled into a native shared library (`libjarvis_kernel`).
 
-Kernel
+C is used to implement
+
+Kernel Core
 
 Process Manager
 
@@ -674,9 +692,31 @@ Device Manager
 
 Shell
 
-Virtual Hardware
+I/O Manager
 
-The operating system logic remains completely inside Python.
+IPC & Synchronization
+
+Virtual Hardware State
+
+A single **x86-64 Assembly (NASM)** module implements the register/PC save-restore used by the context switcher.
+
+This keeps the operating system logic completely inside a native, fast, systems-level codebase — the same choice made by real operating systems — while still running entirely inside the JARVIS application process.
+
+## Python (Bridge + Voice + AI)
+
+Python is used only for what runs outside the kernel:
+
+FastAPI Bridge (calling the kernel via ctypes)
+
+Voice Assistant (Faster-Whisper, OpenWakeWord, pyttsx3)
+
+Local Command Parser
+
+Gemini Integration
+
+Automation Engine
+
+Configuration and Services
 
 ---
 
@@ -713,31 +753,19 @@ jarvis-os/
 
 ├── kernel/
 
+│        (core/, cpu/, asm/, process/, scheduler/, memory/,
+
+│         interrupts/, filesystem/, device/, io/, ipc/, shell/, deps/)
+
 ├── apps/
 
 ├── ai/
-
-├── filesystem/
-
-├── scheduler/
-
-├── process/
-
-├── memory/
-
-├── drivers/
-
-├── interrupts/
-
-├── shell/
 
 ├── database/
 
 ├── assets/
 
 ├── config/
-
-├── api/
 
 ├── services/
 
@@ -750,6 +778,19 @@ jarvis-os/
 ```
 
 Every folder has a specific responsibility.
+
+The following directories are written entirely in C (C17) and compiled into the native kernel library (`kernel/`), which is loaded in-process by the FastAPI bridge via `ctypes`:
+
+- `kernel/core/` — Kernel, dispatcher, syscalls, event bus, log, error handling
+- `kernel/cpu/` + `kernel/asm/` — CPU model and the x86-64 context-switch stub
+- `kernel/process/` + `kernel/scheduler/` + `kernel/memory/` — process, scheduler, paging/memory
+- `kernel/interrupts/` — interrupt controller and ISRs
+- `kernel/filesystem/` — virtual file system and disk
+- `kernel/device/` + `kernel/io/` — devices, drivers, I/O, buffers, spooling
+- `kernel/ipc/` — IPC and synchronization
+- `kernel/shell/` — the command shell
+
+All other directories are host-language code: TypeScript and Electron for `frontend/`, Python for `backend/`, `ai/`, `database/`, `services/`, `utils/`, and `config/`.
 
 ---
 
@@ -802,6 +843,8 @@ Voice Requests
 This is the heart of JARVIS OS.
 
 Nothing in the operating system bypasses the kernel.
+
+The kernel is written in C (C17) and shipped as a native shared library; one x86-64 Assembly stub (kernel/asm/) performs the register save/restore for context switching.
 
 The kernel coordinates
 
@@ -1356,6 +1399,8 @@ Since JARVIS OS runs on top of Windows, we cannot control the real CPU.
 Instead, we simulate our own virtual processor.
 
 The virtual CPU behaves like an independent processor responsible for executing processes inside JARVIS OS.
+
+The virtual CPU is implemented entirely in C (C17) inside the kernel library — registers, clock, decode-execute cycle, and its context-switch save/restore (the low-level manipulation of that state lives in a single x86-64 Assembly stub).
 
 ---
 

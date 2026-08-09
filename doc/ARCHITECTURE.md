@@ -514,6 +514,10 @@ These are software models, not real hardware.
 
 The project structure is organized so that each directory owns a specific part of the operating system.
 
+**Kernel-facing directories** (`kernel/`, `process/`, `scheduler/`, `memory/`, `filesystem/`, `interrupts/`, `drivers/`, `io/`, `ipc/`, `shell/` and the `asm/` context-switch stub) are implemented in **C (C17)** and compiled together into one native shared library (`libjarvis_kernel`). The library runs inside the application process and is reached exclusively through the Python bridge (`backend/`) using `ctypes` over the JSON kernel ABI (§ Kernel ABI below).
+
+**Host-facing directories** (`frontend/`, `backend/`, `ai/`, `database/`) are implemented in TypeScript / Electron and Python.
+
 ```
 frontend/
 ```
@@ -566,6 +570,8 @@ Owns the operating system.
 
 Responsible for coordinating every subsystem.
 
+Written in C (C17), compiled into a native shared library, and paired with a single x86-64 Assembly (`asm/`) stub for context-switch register save/restore.
+
 Contains
 
 Kernel
@@ -575,6 +581,8 @@ Dispatcher
 System Calls
 
 Event Bus
+
+Error Handler
 
 ---
 
@@ -1267,6 +1275,8 @@ The response always returns through the Kernel.
 The CPU Simulator represents a virtual processor.
 
 It is completely independent from the host computer's CPU.
+
+It is implemented in C (C17) inside the kernel library; the low-level save/restore of CPU state during a context switch is implemented as a single x86-64 Assembly stub (`kernel/asm/context_switch.S`), symbolically mirroring what a real OS would execute on the hardware.
 
 ---
 
@@ -5385,16 +5395,10 @@ Each folder owns one responsibility.
 
 Speech Recognition converts spoken audio into text.
 
-Recommended library
+Implemented with
 
 ```
 Faster Whisper
-```
-
-or
-
-```
-SpeechRecognition
 ```
 
 The output is always plain text.
@@ -5421,6 +5425,12 @@ JARVIS continuously listens for
 
 ```
 Hey Jarvis
+```
+
+Implemented with
+
+```
+OpenWakeWord
 ```
 
 Until the wake word is detected,
@@ -5749,6 +5759,27 @@ Every endpoint forwards requests to the Kernel.
 
 ---
 
+## The Kernel ABI (FastAPI → C kernel)
+
+The bridge never talks to kernel internals. All communication uses a compact **JSON ABI** exported by the C kernel library (`libjarvis_kernel`) and invoked from FastAPI through **ctypes**:
+
+```
+jvk_init(config_json)          → "ok" / error
+jvk_command(action_json)       → result_json        (create_process, kill, alloc_mem, open_file, change_scheduler …)
+jvk_tick()                                          advance clock, fire timer interrupt, run scheduler
+jvk_snapshot()                → full system state JSON
+jvk_logs(since)               → incremental logs JSON
+jvk_shutdown()               → graceful shutdown
+```
+
+Rules:
+
+- The kernel is the single source of truth; the bridge is a pure forwarding + validation layer (Pydantic on both sides).
+- Every request still follows the lifecycle `Frontend → Backend → Kernel ABI → subsystem → result back through Kernel`.
+- Live updates are produced by the bridge periodically calling `jvk_tick()` + `jvk_snapshot()`/`jvk_logs()` and publishing results into the WebSocket channels below. Immediate commands use `jvk_command()`.
+
+---
+
 # 132. WebSocket Channels
 
 Real-time updates
@@ -5891,6 +5922,8 @@ Recommended implementation order
 
 Project Setup
 
+Kernel toolchain first — `gcc` (MinGW-w64 on Windows), CMake/Make, NASM, Google Test wired to build `libjarvis_kernel`
+
 Electron
 
 React
@@ -6001,15 +6034,18 @@ Every module should be tested independently.
 
 Unit Tests
 
-- Scheduler
-- Process Manager
-- Memory Manager
-- Filesystem
-- IPC
-- Drivers
+- Scheduler (Google Test, C)
+- Process Manager (Google Test, C)
+- Memory Manager (Google Test, C)
+- Filesystem (Google Test, C)
+- IPC (Google Test, C)
+- Drivers (Google Test, C)
+- Kernel ABI / bridge (pytest via ctypes)
+- React components (Vitest)
 
 Integration Tests
 
+- Kernel ABI → C kernel (ctypes round-trip)
 - Kernel + Memory
 - Kernel + Scheduler
 - Kernel + Filesystem
@@ -6040,7 +6076,7 @@ FastAPI Backend
 
 ↓
 
-Kernel Modules
+Kernel Modules (C17 native library)
 
 ↓
 
