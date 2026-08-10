@@ -122,7 +122,7 @@ Example
 
 User says
 
-"Open Calculator"
+"Launch the Finance Agent"
 
 ↓
 
@@ -138,7 +138,7 @@ Kernel
 
 ↓
 
-Calculator launches
+Finance Agent launches (spawned as a process)
 
 The kernel performs all the work.
 
@@ -162,15 +162,21 @@ The experience should include
 
 • Dock
 
+• Agent Hub (registry of running and available agents)
+
+• Agent Consoles (per-agent task sessions)
+
+• Agent Studio (create custom agents)
+
 • Notification panel
 
 • Voice assistant
 
-• Built-in applications
+• Built-in agents
 
 • Window management
 
-• Process monitoring
+• Agent process monitoring
 
 • File explorer
 
@@ -205,6 +211,8 @@ its own
 • processes
 
 • memory
+
+• AI agents (simulated, no local language model required)
 
 • virtual files
 
@@ -404,7 +412,7 @@ The interface should remain responsive while multiple simulated processes execut
 
 Scalability
 
-New applications should be installable without modifying the kernel.
+New agents (built-in or user-created) should be installable without modifying the kernel.
 
 ---
 
@@ -486,7 +494,7 @@ Future features like networking, cloud synchronization, multi-user support, and 
 
              ▼
 
-         Desktop Applications
+         Agent Consoles
 
 ---
 
@@ -494,11 +502,11 @@ Future features like networking, cloud synchronization, multi-user support, and 
 
 Everything in JARVIS OS communicates through the Kernel.
 
-Applications do not directly manipulate memory.
+Agents do not directly manipulate memory.
 
-Applications do not directly create files.
+Agents do not directly create files.
 
-Applications do not directly schedule themselves.
+Agents do not directly schedule themselves.
 
 Instead,
 
@@ -506,7 +514,7 @@ every action passes through the Kernel APIs.
 
 Example
 
-Calculator
+Finance Agent
 
 ↓
 
@@ -632,11 +640,15 @@ Animations
 
 Window Management
 
+Agent Consoles
+
+Agent Hub
+
+Agent Studio
+
 Notifications
 
 Settings
-
-Applications
 
 Everything the user sees.
 
@@ -724,7 +736,9 @@ Configuration and Services
 
 SQLite stores
 
-Installed Applications
+Installed Agents
+
+Agent Configurations (Agent Studio profiles)
 
 User Settings
 
@@ -757,7 +771,7 @@ jarvis-os/
 
 │         interrupts/, filesystem/, device/, io/, ipc/, shell/, deps/)
 
-├── apps/
+├── agents/
 
 ├── ai/
 
@@ -790,7 +804,9 @@ The following directories are written entirely in C (C17) and compiled into the 
 - `kernel/ipc/` — IPC and synchronization
 - `kernel/shell/` — the command shell
 
-All other directories are host-language code: TypeScript and Electron for `frontend/`, Python for `backend/`, `ai/`, `database/`, `services/`, `utils/`, and `config/`.
+All other directories are host-language code: TypeScript and Electron for `frontend/`, Python for `backend/`, `ai/`, `agents/`, `database/`, `services/`, `utils/`, and `config/`.
+
+`agents/` holds the agent definitions (manifests with role, system prompt, tools, colour, and icon). The engine that simulates agent behaviour runs inside the kernel as the Agent Simulator module.
 
 ---
 
@@ -812,7 +828,11 @@ Animations
 
 Notifications
 
-Applications
+Agent Consoles
+
+Agent Hub
+
+Agent Studio
 
 Voice Interface
 
@@ -860,7 +880,7 @@ Interrupts
 
 Devices
 
-Applications
+Agents
 
 ---
 
@@ -1070,7 +1090,9 @@ SQLite database
 
 Contains
 
-Applications
+Agents
+
+Agent Configurations
 
 Users
 
@@ -1106,7 +1128,7 @@ Boot Animation
 
 Stores
 
-Application Configuration
+Agent Defaults
 
 Scheduler Defaults
 
@@ -1207,7 +1229,7 @@ Desktop GUI
 
 ↓
 
-Applications
+Agent Consoles
 
 ↓
 
@@ -1235,7 +1257,7 @@ Example
 Wrong
 
 ```
-Calculator
+Agent
 
 ↓
 
@@ -1245,7 +1267,7 @@ Memory Manager
 Correct
 
 ```
-Calculator
+Agent
 
 ↓
 
@@ -1292,7 +1314,7 @@ The kernel is responsible for:
 
 # 16. Kernel API Layer
 
-The kernel exposes a set of APIs that every application and subsystem must use.
+The kernel exposes a set of APIs that every agent, system tool, and subsystem must use.
 
 Examples include:
 
@@ -1311,9 +1333,13 @@ kernel.createFile()
 
 kernel.deleteFile()
 
-kernel.installApplication()
+kernel.installAgent()
 
-kernel.uninstallApplication()
+kernel.uninstallAgent()
+
+kernel.launchAgent()
+
+kernel.submitTask()
 
 kernel.generateInterrupt()
 
@@ -1326,7 +1352,7 @@ kernel.restart()
 kernel.getSystemState()
 ```
 
-No application should access the Process Manager, Memory Manager, or File System directly. This keeps the architecture modular and closely resembles the layered design of real operating systems.
+No agent should access the Process Manager, Memory Manager, or File System directly. This keeps the architecture modular and closely resembles the layered design of real operating systems.
 
 ---
 
@@ -1352,7 +1378,7 @@ This section describes the implementation of the first stage of JARVIS OS.
 
 Stage I focuses on building the core execution engine of the operating system.
 
-Without this stage, no application can execute, no scheduling can occur, and no process can exist.
+Without this stage, no agent can execute, no scheduling can occur, and no process can exist.
 
 This is the foundation upon which every other operating system component depends.
 
@@ -1546,7 +1572,7 @@ System Bus
 
 Clock
 
-Applications interact with this virtual machine instead of real hardware.
+Agents and tools interact with this virtual machine instead of real hardware.
 
 ---
 
@@ -1554,9 +1580,9 @@ Applications interact with this virtual machine instead of real hardware.
 
 ## Objective
 
-Every application running inside JARVIS OS becomes a Process.
+Every agent and system tool running inside JARVIS OS becomes a Process.
 
-Opening Calculator
+Launching the Finance Agent
 
 ↓
 
@@ -1576,7 +1602,7 @@ creates
 
 Process
 
-Opening Text Editor
+Launching the Coding Agent
 
 ↓
 
@@ -1694,7 +1720,7 @@ Each PCB should contain
 
 Process ID
 
-Application Name
+Agent / Tool Name
 
 Priority
 
@@ -1731,7 +1757,7 @@ Example
 ```
 PID : 004
 
-Application : Calculator
+Agent : Finance Agent
 
 Priority : High
 
@@ -1970,7 +1996,7 @@ Average Turnaround Time
 
 # 26. System Calls
 
-Applications never communicate directly with the kernel.
+Agents and system tools never communicate directly with the kernel.
 
 Instead,
 
@@ -1978,7 +2004,7 @@ they generate System Calls.
 
 Examples
 
-Calculator wants memory
+Agent wants memory
 
 ↓
 
@@ -1992,7 +2018,7 @@ Kernel
 
 Memory Manager
 
-Calculator wants file
+Agent wants file
 
 ↓
 
@@ -2006,7 +2032,7 @@ Kernel
 
 Filesystem
 
-Calculator wants printer
+Agent wants printer
 
 ↓
 
@@ -2020,7 +2046,7 @@ Kernel
 
 Printer Driver
 
-This models how real operating systems isolate applications from kernel functionality.
+This models how real operating systems isolate programs from kernel functionality.
 
 ---
 
@@ -2070,14 +2096,14 @@ Selecting a process should allow actions such as Suspend, Resume, Terminate, or 
 Stage I is considered complete when:
 
 - The virtual CPU can execute simulated processes.
-- Applications create valid PCBs.
+- Agents and tools create valid PCBs.
 - Process states change correctly.
 - Context switching works.
 - Timer interrupts trigger scheduling.
 - Multiple scheduling algorithms are supported.
 - The Task Manager displays live kernel information.
 - The CPU visualization reflects execution in real time.
-- Every application executes through the Process Manager and Scheduler.
+- Every agent and tool executes through the Process Manager and Scheduler.
 
 At this point, JARVIS OS behaves like a functioning operating system with process execution and CPU management. The next stage will introduce memory management, paging, virtual memory, and process isolation.
 
@@ -2134,12 +2160,12 @@ Stage II consists of the following modules.
 
 The Memory Manager is responsible for allocating, tracking and releasing memory for every running process.
 
-No application can directly access memory.
+No agent can directly access memory.
 
 Every memory request passes through the Kernel.
 
 ```
-Application
+Agent
 
 ↓
 
@@ -2274,7 +2300,7 @@ it requests memory.
 
 Example
 
-Calculator
+Finance Agent
 
 ↓
 
@@ -2600,7 +2626,7 @@ The algorithm should be configurable from Settings.
 
 # 38. Memory Visualization
 
-The Memory Visualizer should become one of the showcase applications of JARVIS OS.
+The Memory Visualizer should become one of the showcase tools of JARVIS OS.
 
 Display
 
@@ -2652,11 +2678,15 @@ Software Interrupt
 
 Page Fault Interrupt
 
-Application Interrupt
+Agent Interrupt
 
 Shutdown Interrupt
 
 Future
+
+Network Interrupt
+
+USB Interrupt
 
 Network Interrupt
 
@@ -2820,7 +2850,7 @@ Out of Memory
 
 File Not Found
 
-Application Crash
+Agent Crash
 
 Invalid Process ID
 
@@ -2841,7 +2871,7 @@ Interrupted Execution
 Whenever an error occurs
 
 ```
-Application
+Agent
 
 ↓
 
@@ -2881,7 +2911,7 @@ Examples
 ```
 10:02
 
-Calculator Started
+Finance Agent Started
 
 10:03
 
@@ -3012,7 +3042,7 @@ This includes
 
 • Shell
 
-• Desktop Applications
+• Agent Consoles
 
 All these modules together complete the operating system.
 
@@ -3042,7 +3072,7 @@ The third stage consists of
 
 • Shell
 
-• Desktop Applications
+• Agent Consoles
 
 ---
 
@@ -3050,9 +3080,9 @@ The third stage consists of
 
 ## Objective
 
-Multiprogramming allows multiple applications to exist in memory simultaneously while sharing the CPU efficiently.
+Multiprogramming allows multiple agents and tools to exist in memory simultaneously while sharing the CPU efficiently.
 
-The CPU never truly runs all applications at once.
+The CPU never truly runs all programs at once.
 
 Instead,
 
@@ -3060,27 +3090,27 @@ it rapidly switches between them using the scheduler.
 
 To the user,
 
-it appears as though every application is running at the same time.
+it appears as though every agent is running at the same time.
 
 ---
 
 ## Example
 
-The user opens
+The user launches
 
-Calculator
-
-↓
-
-Text Editor
+Finance Agent
 
 ↓
 
-File Explorer
+Coding Agent
 
 ↓
 
-Task Manager
+Research Agent
+
+↓
+
+Agent Console
 
 ↓
 
@@ -3182,10 +3212,10 @@ Sockets
 
 ## Message Queue
 
-A process sends a message.
+An agent sends a message.
 
 ```
-Calculator
+Finance Agent
 
 ↓
 
@@ -3193,10 +3223,10 @@ Message Queue
 
 ↓
 
-Notes App
+Reporting Agent
 ```
 
-The receiving process reads the message later.
+The receiving agent reads the message later.
 
 ---
 
@@ -3207,7 +3237,7 @@ Two processes share a common memory region.
 Example
 
 ```
-Text Editor
+Coding Agent
 
 ↓
 
@@ -3403,7 +3433,7 @@ Root
 
 ├── Pictures
 
-├── Applications
+├── Agents
 
 └── System
 ```
@@ -3470,7 +3500,7 @@ JARVIS OS maintains its own virtual storage.
 
 The virtual disk stores
 
-Applications
+Agents
 
 Files
 
@@ -3580,12 +3610,12 @@ Drivers remain modular so additional devices can be added later.
 
 The I/O Manager coordinates every input and output request.
 
-Applications never communicate directly with devices.
+Agents and system tools never communicate directly with devices.
 
 Example
 
 ```
-Text Editor
+Writing Agent
 
 ↓
 
@@ -3631,7 +3661,7 @@ Input Buffer
 
 ↓
 
-Application Reads Data
+Agent Console Reads Data
 ```
 
 Similarly,
@@ -3736,13 +3766,15 @@ The shell communicates only through Kernel APIs.
 
 ---
 
-# 57. Built-in Applications
+# 57. Built-in Agents
 
-The operating system should include applications that demonstrate different kernel subsystems.
+The operating system should include agents that demonstrate different kernel subsystems.
+
+Every agent is a simulated process: it receives tasks, gets scheduled, allocates memory, and reports results — all driven by a deterministic Plan → Think → Act → Report pipeline inside the kernel. No language model runs inside an agent.
 
 ---
 
-## Calculator
+## Finance Agent
 
 Demonstrates
 
@@ -3750,7 +3782,91 @@ Process Creation
 
 Memory Allocation
 
-Application Lifecycle
+Agent Lifecycle
+
+CPU Arithmetic
+
+Report generation (file writes)
+
+---
+
+## Coding Agent
+
+Demonstrates
+
+CPU-bound scheduling
+
+Heap allocation (large code-generation workloads)
+
+File creation (generated source files)
+
+---
+
+## Research Agent
+
+Demonstrates
+
+Virtual File System (reads)
+
+Searching
+
+Optional Gemini summarization
+
+---
+
+## Writing Agent
+
+Demonstrates
+
+File Reading
+
+File Writing
+
+Text output
+
+---
+
+## HR / Legal / Marketing / Travel / Health Agents
+
+Each simulates a narrow role: onboarding checklists, compliance checks, campaign reports, itineraries, and wellness summaries. They share the same process model as every other agent.
+
+---
+
+## Agent Studio
+
+The user-facing tool to create a custom agent.
+
+Inputs
+
+Name
+
+Role description (system prompt)
+
+Personality
+
+Colour and icon
+
+Simulated tools
+
+Priority and initial memory budget
+
+Flow
+
+```
+User Saves Agent
+
+↓
+
+Config Stored in SQLite
+
+↓
+
+Agent Registered in Agent Hub
+
+↓
+
+Agent Launches as a Process
+```
 
 ---
 
@@ -3768,25 +3884,11 @@ File Operations
 
 ---
 
-## Text Editor
-
-Demonstrates
-
-File Reading
-
-File Writing
-
-Saving
-
-Opening
-
----
-
 ## Task Manager
 
 Displays
 
-Processes
+Agent Processes
 
 Scheduler
 
@@ -3878,10 +3980,14 @@ At this stage,
 
 every subsystem of the operating system is connected.
 
-The flow for opening an application becomes
+The flow for launching an agent becomes
 
 ```
-User Opens Application
+User Launches Agent
+
+↓
+
+User Submits a Task
 
 ↓
 
@@ -3897,11 +4003,11 @@ Added to Scheduler
 
 ↓
 
-CPU Executes
+CPU Executes (simulated reasoning steps)
 
 ↓
 
-Application Requests File
+Agent Requests File
 
 ↓
 
@@ -3917,11 +4023,15 @@ Disk
 
 ↓
 
-Application Displays Data
+Agent Reports Result
 
 ↓
 
-User Saves File
+Result Shown in Agent Console
+
+↓
+
+User Saves Result
 
 ↓
 
@@ -3946,7 +4056,7 @@ No subsystem bypasses another.
 
 Stage III is complete when
 
-✓ Multiple applications execute simultaneously.
+✓ Multiple agents execute simultaneously.
 
 ✓ IPC works correctly.
 
@@ -3962,7 +4072,7 @@ Stage III is complete when
 
 ✓ Shell commands interact with the kernel.
 
-✓ Built-in applications demonstrate every subsystem.
+✓ Built-in agents demonstrate every subsystem.
 
 ✓ The desktop behaves like a complete operating system.
 
@@ -4003,7 +4113,7 @@ User
 
 ↓
 
-"Open Calculator"
+"Launch the Finance Agent and generate a monthly report"
 
 ↓
 
@@ -4023,7 +4133,7 @@ Process Manager
 
 ↓
 
-Calculator Opens
+Finance Agent Launches
 
 The Process Manager still creates the process.
 
@@ -4189,14 +4299,14 @@ Example
 
 User
 
-"Hey Jarvis, open Task Manager."
+"Hey Jarvis, launch the Research Agent."
 
 ↓
 
 Recognized Text
 
 ```
-open task manager
+launch the research agent
 ```
 
 The parser now processes the command.
@@ -4214,9 +4324,11 @@ they are matched using predefined command patterns.
 Examples
 
 ```
-Open Calculator
+Launch Finance Agent
 
-Open File Explorer
+Ask the Coding Agent to fix bugs
+
+Generate a report
 
 Shutdown
 
@@ -4249,13 +4361,15 @@ Advantages
 
 Examples
 
-Open Applications
+Launch Agent
 
-Close Applications
+Close Agent
+
+Ask Agent (route a task to an agent)
 
 Switch Windows
 
-Show Task Manager
+Show Tasks
 
 Kill Process
 
@@ -4267,9 +4381,9 @@ Search Files
 
 Open Settings
 
-Install App
+Install Agent
 
-Uninstall App
+Uninstall Agent
 
 Shutdown
 
@@ -4297,7 +4411,7 @@ Explain Current State
 
 ↓
 
-"Why is Process 5 waiting?"
+"Why is the Finance Agent waiting?"
 
 ---
 
@@ -4341,7 +4455,7 @@ JARVIS should communicate naturally with the user.
 
 Examples
 
-"Calculator has been opened."
+"Finance Agent report is ready."
 
 "Memory allocation completed."
 
@@ -4391,7 +4505,7 @@ The desktop should include
 
 Taskbar
 
-Application Dock
+Agent Dock
 
 Desktop Icons
 
@@ -4415,7 +4529,7 @@ Window Manager
 
 # Window Management
 
-Applications should behave like normal desktop applications.
+Agent consoles and system tools should behave like normal desktop windows.
 
 Users should be able to
 
@@ -4435,7 +4549,7 @@ Snap
 
 Switch Between Windows
 
-Each application executes as its own simulated process.
+Each agent console executes as its own simulated process.
 
 ---
 
@@ -4453,15 +4567,15 @@ Interrupt Alerts
 
 Voice Notifications
 
-Application Updates
+Agent Updates
 
 AI Messages
 
 ---
 
-# 64. Built-in Applications
+# 64. Built-in Agents
 
-The operating system should ship with a complete ecosystem of applications.
+The operating system should ship with a complete ecosystem of agents.
 
 ---
 
@@ -4575,15 +4689,39 @@ System Preferences
 
 ---
 
-## Calculator
+## Finance Agent
 
-Simple demonstration application.
+Simulated budget and reporting agent that demonstrates process creation and file writes.
 
 ---
 
-## Text Editor
+## Coding Agent
 
-Allows creation and editing of virtual files.
+Simulated code-generation agent that creates virtual source files under CPU load.
+
+---
+
+## Research Agent
+
+Simulated search and summarization agent (filesystem reads; optional Gemini summary).
+
+---
+
+## Writing Agent
+
+Simulated writing agent that produces and edits virtual files.
+
+---
+
+## HR / Legal / Marketing / Travel / Health Agents
+
+Remaining built-in agents, each simulating a narrow role with the same process model.
+
+---
+
+## Agent Studio
+
+Lets the user design, save, and launch custom agents (name, role, prompts, tools, colour, resource budget).
 
 ---
 
@@ -4598,7 +4736,7 @@ Displays complete operating system statistics.
 Every component communicates through Kernel APIs.
 
 ```
-Application
+Agent
 
 ↓
 
@@ -4614,10 +4752,10 @@ Kernel
 
 ↓
 
-Application
+Agent Console
 ```
 
-Applications never communicate directly with each other.
+Agents and tools never communicate directly with each other.
 
 This architecture mirrors modern operating systems and keeps modules loosely coupled.
 
@@ -4691,7 +4829,7 @@ Taskbar
 
 Window Manager
 
-Applications
+Agent Consoles
 
 System Monitor
 
@@ -4783,7 +4921,13 @@ By the completion of the project, JARVIS OS should include:
 
 ✓ Notification Center
 
-✓ Multiple Built-in Applications
+✓ Agent Hub
+
+✓ Agent Consoles
+
+✓ Agent Studio
+
+✓ Multiple Built-in Agents
 
 ✓ Boot Animation
 
@@ -4843,6 +4987,8 @@ Possible future additions include:
 
 • Package manager
 
+• Agent marketplace (share custom agents)
+
 • Security module
 
 • User authentication
@@ -4865,9 +5011,11 @@ Possible future additions include:
 
 JARVIS OS is designed to be far more than a traditional Operating Systems course project.
 
-It combines a complete implementation of the three academic stages—CPU and Process Management, Memory Management, and File & I/O Management—with a modern AI-driven interaction model and a visually immersive desktop environment.
+It combines a complete implementation of the three academic stages—CPU and Process Management, Memory Management, and File & I/O Management—with an AI Agent Management layer: instead of running ordinary apps, the OS runs, schedules, monitors, and coordinates simulated AI agents, and lets the user create their own.
 
 The operating system remains faithful to core OS principles by implementing all scheduling, memory allocation, paging, interrupt handling, file management, synchronization, and device control within its own kernel modules.
+
+Agents behave like any other process: they consume CPU time, allocate virtual memory, wait on I/O, and communicate through the kernel, all visualized in the desktop. No local language model is required because agent behaviour is simulated deterministically by the kernel's Agent Simulator.
 
 The AI layer enhances usability without replacing the operating system, acting purely as an intelligent interface that translates human requests into structured kernel operations.
 

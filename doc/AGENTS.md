@@ -8,7 +8,7 @@ Version: 1.0
 
 # Project Goal
 
-You are building **JARVIS OS**, a fully software-based educational operating system simulator.
+You are building **JARVIS OS**, a fully software-based educational operating system simulator that manages AI agents.
 
 This is **NOT** a Linux distribution.
 
@@ -16,7 +16,9 @@ This is **NOT** a Windows clone.
 
 This is **NOT** an Electron desktop application with random windows.
 
-The objective is to build an operating system simulator that teaches and demonstrates real Operating System concepts while providing a modern futuristic AI-powered desktop experience.
+The objective is to build an operating system simulator that teaches and demonstrates real Operating System concepts while providing a modern futuristic AI-powered desktop experience — where the "programs" the OS runs are simulated AI agents, not ordinary apps.
+
+Each agent (Finance, Coding, Research, and user-created ones) runs as a simulated process: it gets scheduled on the virtual CPU, allocates virtual memory, waits on I/O, and communicates through the kernel, all visualized in the desktop. No language model runs inside an agent; agent behaviour is a deterministic simulation, so the project runs on any laptop.
 
 The project should feel like a complete desktop operating system from the moment it boots.
 
@@ -61,6 +63,8 @@ This project is
 • A filesystem simulator
 
 • A device simulator
+
+• An AI agent management platform — agents run as processes with tasks, tools, memory budgets, and simulated reasoning
 
 • An AI assistant integrated into the operating system
 
@@ -258,6 +262,12 @@ Taskbar
 
 Rendering
 
+Agent Hub
+
+Agent Consoles
+
+Agent Studio
+
 ---
 
 Kernel (C) owns
@@ -275,6 +285,8 @@ Drivers
 Interrupts
 
 IPC
+
+Agent Simulator
 
 ---
 
@@ -296,7 +308,7 @@ Logs
 
 Settings
 
-Installed Applications
+Installed Agents
 
 Filesystem Metadata
 
@@ -416,17 +428,21 @@ Desktop
 
 14
 
-Applications
+Agent Runtime
 
 15
 
-Voice
+Agent Consoles
 
 16
 
-Gemini
+Voice
 
 17
+
+Gemini
+
+18
 
 Testing
 
@@ -588,7 +604,9 @@ Voice Command
 
 Gemini Call
 
-Application Installed
+Agent Created
+
+Agent Launched
 
 ---
 
@@ -822,17 +840,17 @@ Natural Language Reasoning
 
 Forbidden
 
-Open Calculator
+Launch Agent without explicit user request
 
 Kill Process
 
 Restart
 
-Open Explorer
-
 Delete File
 
 Create Folder
+
+Skip the local parser for simple tasks
 
 Simple commands stay local.
 
@@ -862,7 +880,7 @@ Logs
 
 Filesystem
 
-Installed Apps
+Installed Agents
 
 Users
 
@@ -1005,10 +1023,11 @@ Examples
 When the user launches JARVIS OS, they should experience:
 
 - A boot sequence that feels like starting a new computer.
-- A complete desktop environment with multiple applications.
+- A complete desktop environment with an Agent Hub, agent consoles, and the Agent Studio.
 - A functioning virtual kernel handling processes, scheduling, memory, files, devices, interrupts, IPC, and synchronization.
+- Multiple simulated AI agents (Finance, Coding, Research, and user-created ones) running as processes, receiving tasks, being scheduled, allocating memory, and reporting results.
 - Real-time visualizations of internal operating system concepts.
-- Voice interaction through "Hey JARVIS" for local commands.
+- Voice interaction through "Hey JARVIS" to launch agents, dispatch tasks, and control the OS.
 - AI-powered reasoning (via Gemini) only where natural-language understanding or summarization adds value.
 - A modular architecture where every subsystem communicates only through the Kernel.
 - An educational yet professional operating system simulator that demonstrates all three core OS stages while feeling like a polished, futuristic product rather than a typical college project.

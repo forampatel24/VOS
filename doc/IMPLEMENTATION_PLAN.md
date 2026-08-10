@@ -14,7 +14,7 @@ It translates the product specification (`PROJECT_SPEC.md`) and the engineering 
 - The operating system core (kernel) is implemented in **C (C17)** and compiled into a **native shared library** (`libjarvis_kernel` / `jarvis_kernel.dll`) that runs **in-process inside the application** — a kernel-layer simulator, not a bootable OS.
 - One genuine **x86-64 Assembly (NASM)** module provides register/PC save-restore used by the context switcher (the low-level proof point).
 - The **FastAPI (Python) bridge** calls the C kernel via **ctypes**; the kernel talks to the world with a **JSON ABI**.
-- Everything upstream of the kernel — Electron, React, voice, Gemini, SQLite — matches the original vision unchanged.
+- Everything upstream of the kernel — Electron, React, voice, Gemini, SQLite, and the agent layer (Agent Simulator, Agent Hub, Agent Studio) — builds on the fixed product vision.
 
 This replaces v1.0 of this document (which assumed a pure-Python simulated kernel).
 
@@ -36,7 +36,7 @@ Constants that DID NOT change:
 - Kernel is the **only authority**; every request passes through it.
 - Subsystems never talk to each other; only through kernel syscalls.
 - React owns UI state, SQLite owns persistent state, kernel owns runtime state.
-- Same layering, same 3 academic stages, same JARVIS UI / voice / Gemini goals.
+- Same layering, same 3 academic stages, same JARVIS UI / voice / Gemini goals; the OS's "programs" are simulated AI agents running as processes.
 
 ---
 
@@ -139,7 +139,7 @@ Every object crossing the kernel boundary is a **JSON string**. This keeps the k
 ```c
 // kernel/abi.h   (exported by libjarvis_kernel)
 const char* jvk_init(const char* config_json);      // "ok" or error
-const char* jvk_command(const char* action_json);   // {"action":"create_process","name":"calculator",...} -> result_json
+const char* jvk_command(const char* action_json);   // {"action":"launch_agent","agent":"finance",...} -> result_json
 void        jvk_tick(void);                          // advance virtual clock, fire timer interrupt, run scheduler
 const char* jvk_snapshot(void);                      // full system state for UI
 const char* jvk_logs(int since);                     // incremental kernel logs
@@ -243,20 +243,22 @@ Rules:
 
 ## M12 — Desktop Shell
 - Boot screen → Login → JARVIS theme desktop; window manager (open/move/resize/min/max/snap/focus); taskbar, dock, search, notifications, tray, clock.
-- Every window reflects a real process (`POST /api/applications/open`), closing kills via `kill_process`.
-- **DoD:** 6 windows simultaneously, correct z-order, drag/resize; Closing process verified in Task Manager snapshot.
+- Every agent console reflects a real agent process (`POST /api/agents/launch`); closing one kills the agent via `kill_process`.
+- **DoD:** 6 windows simultaneously, correct z-order, drag/resize; closing an agent verified in Task Manager snapshot.
 
 ---
 
-## M13 — Built-in Applications
-Calculator · File Explorer · Text Editor · Task Manager · Memory Viewer · CPU Monitor · System Monitor · Device Manager · Terminal · IPC & Sync Lab · Settings.
-- **DoD:** every app opens windows and reads live kernel snapshots; Settings change scheduler/memory/replacement instantly (no restart).
+## M13 — Agent Runtime & Built-in Agents
+- Agent Simulator in the kernel (Plan → Think → Act → Report pipeline), agent registry, task queues; Agent Studio (create/save custom agents) and Agent Hub.
+- Built-in agents: Finance · Coding · Research · Writing · HR · Legal · Marketing · Travel · Health.
+- System tools: File Explorer · Task Manager · Memory Viewer · CPU Monitor · System Monitor · Device Manager · Terminal · IPC & Sync Lab · Settings.
+- **DoD:** every agent runs as a process, consumes CPU/memory, and reports results; Settings change scheduler/memory/replacement instantly (no restart).
 
 ---
 
 ## M14 — Voice
 - STT (Faster-Whisper), wake word (OpenWakeWord) gating "Hey JARVIS", local intent parser → `jvk_command`, TTS (pyttsx3) confirmations.
-- **DoD:** "open calculator"→ kernel call without network; <1s local.
+- **DoD:** "launch finance agent" → kernel call without network; <1s local.
 
 ---
 
@@ -267,7 +269,7 @@ Calculator · File Explorer · Text Editor · Task Manager · Memory Viewer · C
 ---
 
 ## M16 — Testing, Hardening, Packaging, Presentation
-- Google Test suites for every C module; pytest integration suites; Playwright e2e (boot→login→open apps→save→voice→shutdown).
+- Google Test suites for every C module; pytest integration suites; Playwright e2e (boot→login→launch agents→save→voice→shutdown).
 - Guard: no subsystem imports, kernel is crash-isolated, runtime never in SQLite.
 - electron-builder → `jarvis.exe`, no manual install besides Node/Python; final demo recorded.
 
@@ -316,7 +318,7 @@ M0 Toolchain (ctypes → tests)
                     ├─> M8 Devices / I/O
                     ├─> M9 IPC + Sync
                     └─> M10 Shell
-M11 Bridge+WS (full) → M12 Desktop → M13 Apps → M14 Voice → M15 AI
+M11 Bridge+WS (full) → M12 Desktop → M13 Agents → M14 Voice → M15 AI
 M16 Test/Harden/Package/Present (from M0 onward)
 ```
 

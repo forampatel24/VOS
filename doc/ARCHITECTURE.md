@@ -46,11 +46,11 @@ Inside the application, JARVIS maintains its own:
 - Interrupts
 - Drivers
 - Devices
-- Applications
+- AI Agents
 
 The host operating system is never directly exposed to the user.
 
-To the user, the application should feel like an independent desktop operating system.
+To the user, the application should feel like an independent desktop operating system — one whose "programs" are AI agents. Each agent (Finance, Coding, Research, plus user-created ones) runs as a simulated process, is scheduled on the virtual CPU, allocates virtual memory, and communicates only through the kernel. No agent is backed by a local or remote language model: every agent executes a deterministic, simulated reasoning pipeline (Plan → Think → Act → Result), so the whole system demonstrates real operating-system behaviour while running on any laptop.
 
 ---
 
@@ -66,7 +66,7 @@ No subsystem communicates directly with another subsystem.
 
 Correct
 
-Application
+Agent
 
 ↓
 
@@ -78,7 +78,7 @@ Memory Manager
 
 Wrong
 
-Application
+Agent
 
 ↓
 
@@ -172,7 +172,7 @@ Example
 
 User clicks
 
-Open Calculator
+Launch Finance Agent
 
 ↓
 
@@ -251,7 +251,7 @@ The entire operating system follows a layered architecture.
 |      Voice Commands | Keyboard | Mouse | Touch       |
 +------------------------------------------------------+
 |             React Desktop Environment                |
-| Desktop • Windows • Apps • Taskbar • Dock • UI       |
+| Desktop • Agent Consoles • Taskbar • Dock • UI       |
 +------------------------------------------------------+
 |              FastAPI Backend Services                |
 | API • Authentication • Event Router • Logging        |
@@ -259,8 +259,8 @@ The entire operating system follows a layered architecture.
 |                  JARVIS KERNEL                       |
 | System Calls • Scheduler • Dispatcher • Event Bus    |
 +------------------------------------------------------+
-|      Core Operating System Modules                   |
-| Process | Memory | File System | I/O | Interrupts    |
+|      Core Operating System Modules                    |
+| Process | Agent | Memory | File System | I/O | Int.  |
 +------------------------------------------------------+
 |         Virtual Hardware Simulation                  |
 | CPU • RAM • Disk • Keyboard • Display • Printer      |
@@ -282,7 +282,7 @@ Every action follows a predictable execution path.
 
 Example:
 
-User launches Calculator.
+User launches the Finance Agent.
 
 ```
 User
@@ -317,7 +317,7 @@ CPU
 
 ↓
 
-Application Starts
+Agent Starts (spawns as a process)
 
 ↓
 
@@ -406,7 +406,11 @@ Taskbar
 
 Window Manager
 
-Applications
+Agent Consoles
+
+Agent Hub
+
+Agent Studio
 
 Settings
 
@@ -479,8 +483,11 @@ Modules include
 - Device Manager
 - Interrupt Controller
 - Shell
+- Agent Simulator
 
 Each module is completely independent.
+
+The Agent Simulator gives every agent its behaviour: a deterministic Plan → Think → Act → Result pipeline that consumes CPU time and memory like any real program, while never invoking a language model.
 
 ---
 
@@ -528,7 +535,11 @@ Contains
 
 Desktop
 
-Applications
+Agent Consoles
+
+Agent Hub
+
+Agent Studio
 
 Window Manager
 
@@ -842,7 +853,7 @@ It acts as the brain of the operating system.
 
 Every subsystem communicates through the Kernel.
 
-No application, subsystem, or driver is allowed to bypass it.
+No agent, subsystem, or driver is allowed to bypass it.
 
 The Kernel is responsible for maintaining order, coordinating resources, and ensuring that every module works together correctly.
 
@@ -947,7 +958,7 @@ Every API request reaches the Kernel Core first.
 Example
 
 ```
-Open Calculator
+Launch Finance Agent
 
 ↓
 
@@ -992,7 +1003,7 @@ The Kernel Core determines which subsystem should handle the request.
 
 # 16. System Call Manager
 
-Applications cannot directly access kernel modules.
+Agents and system tools cannot directly access kernel modules.
 
 Instead, they issue System Calls.
 
@@ -1003,7 +1014,7 @@ The System Call Manager receives these requests.
 ## Example Flow
 
 ```
-Calculator
+Finance Agent
 
 ↓
 
@@ -1086,7 +1097,7 @@ generate_interrupt()
 change_scheduler()
 ```
 
-Applications should only know these APIs.
+Agents and system tools should only know these APIs.
 
 They should never know how the subsystem works internally.
 
@@ -1207,9 +1218,9 @@ INTERRUPT_GENERATED
 
 INTERRUPT_COMPLETED
 
-APPLICATION_INSTALLED
+AGENT_INSTALLED
 
-APPLICATION_REMOVED
+AGENT_REMOVED
 
 SYSTEM_SHUTDOWN
 ```
@@ -1409,7 +1420,7 @@ Process Manager
 # Process Creation Flow
 
 ```
-Application Launch
+Agent Launch
 
 ↓
 
@@ -1513,6 +1524,16 @@ PCB
 ```
 
 The PCB acts as the complete runtime description of a process.
+
+Every AI agent runs as an ordinary process with an extended PCB. In addition to the generic fields above, an agent PCB carries:
+
+- Agent ID and role name (Finance, Coding, Research, …)
+- System prompt and personality profile
+- Registered tools (read file, write report, query data budget, …)
+- Task queue pointer (inbox of tasks submitted by the user or other agents)
+- Simulated reasoning state (Planning → Thinking → Acting → Reporting) and current step
+
+The Process Manager treats agents exactly like any other process; only the extra metadata is agent-specific.
 
 ---
 
@@ -1786,7 +1807,7 @@ These rules prevent tight coupling and keep the architecture modular.
 The kernel architecture is complete when:
 
 - Every request passes through the Kernel Core.
-- System Calls are the only interface exposed to applications.
+- System Calls are the only interface exposed to agents and system tools.
 - The Dispatcher correctly routes requests.
 - The Event Bus broadcasts system events.
 - CPU, Scheduler, and Process Manager operate independently but coordinate through the Kernel.
@@ -2540,12 +2561,12 @@ The System Monitor subscribes to these events.
 
 # 48. Kernel ↔ Memory Communication
 
-Applications never communicate with Memory Manager.
+Agents and system tools never communicate with Memory Manager.
 
 Correct
 
 ```
-Application
+Agent
 
 ↓
 
@@ -2559,7 +2580,7 @@ Memory Manager
 Wrong
 
 ```
-Application
+Agent
 
 ↓
 
@@ -2691,14 +2712,14 @@ Examples
 
 ## Software Interrupts
 
-Generated by applications.
+Generated by agents and system tools.
 
 Examples
 
 - Open File
 - Create Process
 - Shutdown Request
-- Install Application
+- Install Agent
 
 ---
 
@@ -2918,7 +2939,7 @@ Input Buffer
 
 ↓
 
-Application
+Agent Console
 ```
 
 ---
@@ -3451,7 +3472,7 @@ The Virtual File System (VFS) is responsible for managing every file and directo
 
 Unlike Windows, JARVIS maintains its own completely isolated storage.
 
-Every application interacts only with this virtual storage.
+Every agent and system tool interacts only with this virtual storage.
 
 The host operating system is never accessed directly except for optionally saving the virtual disk image.
 
@@ -3516,7 +3537,7 @@ The filesystem should mimic a modern desktop operating system.
 
 ├── System
 
-├── Applications
+├── Agents
 
 ├── Users
 
@@ -3634,7 +3655,7 @@ Every operation passes through the Kernel.
 # Example Flow
 
 ```
-Text Editor
+Writing Agent
 
 ↓
 
@@ -3716,7 +3737,7 @@ Boot
 
 System
 
-Applications
+Agents
 
 User Files
 
@@ -3828,10 +3849,10 @@ Disabled
 
 Drivers are software modules responsible for communicating with virtual hardware.
 
-Applications never access devices directly.
+Agents and system tools never access devices directly.
 
 ```
-Application
+Agent
 
 ↓
 
@@ -3883,7 +3904,7 @@ Each driver exposes a common interface.
 
 The I/O Manager coordinates all input and output operations.
 
-Instead of allowing every application to communicate with devices,
+Instead of allowing every agent and system tool to communicate with devices,
 
 the I/O Manager schedules every request.
 
@@ -3892,7 +3913,7 @@ the I/O Manager schedules every request.
 # Architecture
 
 ```
-Application
+Agent
 
 ↓
 
@@ -3920,7 +3941,7 @@ Kernel
 
 ↓
 
-Application
+Agent
 ```
 
 ---
@@ -3931,7 +3952,7 @@ Application
 - Schedule Requests
 - Dispatch Drivers
 - Handle Completion
-- Notify Applications
+- Notify Agents
 
 ---
 
@@ -3952,7 +3973,7 @@ Input Buffer
 
 ↓
 
-Application
+Agent Console
 ```
 
 This prevents lost keystrokes.
@@ -3966,7 +3987,7 @@ Similarly,
 display output
 
 ```
-Application
+Agent
 
 ↓
 
@@ -3982,7 +4003,7 @@ Display
 # Disk Buffer
 
 ```
-Application
+Agent
 
 ↓
 
@@ -4398,7 +4419,7 @@ AI Events
 Allowed
 
 ```
-Application
+Agent
 
 ↓
 
@@ -4412,7 +4433,7 @@ Filesystem
 Allowed
 
 ```
-Application
+Agent
 
 ↓
 
@@ -4426,7 +4447,7 @@ Device Manager
 Forbidden
 
 ```
-Application
+Agent
 
 ↓
 
@@ -4479,12 +4500,12 @@ The Storage & I/O subsystem is complete when
 
 # End of Part 4
 
-The next part (Part 5) defines the complete **Frontend Architecture**, including the Desktop Environment, Window Manager, React component hierarchy, state management, built-in applications, Electron integration, and how the UI stays synchronized with the Kernel in real time.
+The next part (Part 5) defines the complete **Frontend Architecture**, including the Desktop Environment, Window Manager, React component hierarchy, state management, agent consoles and Agent Studio, Electron integration, and how the UI stays synchronized with the Kernel in real time.
 
 # JARVIS OS
 # ARCHITECTURE.md
 
-# Part 5 — Frontend Architecture, Desktop Environment & Applications
+# Part 5 — Frontend Architecture, Desktop Environment & Agent Consoles
 
 ---
 
@@ -4596,7 +4617,7 @@ The desktop contains
 
  Desktop Wallpaper
 
-            [ Application Windows ]
+            [ Agent Console Windows ]
 
 ----------------------------------------------------
 
@@ -4609,7 +4630,7 @@ The desktop contains
 
 # 98. Window Manager
 
-Every application runs inside a managed window.
+Every agent console and system tool runs inside a managed window.
 
 The Window Manager controls
 
@@ -4622,14 +4643,14 @@ The Window Manager controls
 - Snapping
 - Focus
 
-The Window Manager is independent of every application.
+The Window Manager is independent of every agent and tool.
 
 ---
 
 # Window Lifecycle
 
 ```
-Launch App
+Open Console
 
 ↓
 
@@ -4669,7 +4690,7 @@ Each window maintains
 ```
 Window ID
 
-Application
+Agent / Tool
 
 Title
 
@@ -4701,7 +4722,7 @@ Global UI state is stored inside Zustand.
 Examples
 
 ```
-Running Applications
+Running Agents
 
 ↓
 
@@ -4764,14 +4785,14 @@ Every request follows this architecture.
 
 # Example
 
-Opening Calculator
+Launching the Finance Agent
 
 ```
-Desktop
+Agent Hub
 
 ↓
 
-POST /applications/open
+POST /agents/launch
 
 ↓
 
@@ -4841,6 +4862,12 @@ App
 
 │      ├── Dock
 
+│      ├── Agent Hub
+
+│      ├── Agent Console
+
+│      ├── Agent Studio
+
 │      ├── Desktop Icons
 
 │      ├── Notification Center
@@ -4858,16 +4885,18 @@ App
 
 # 103. Desktop Icons
 
-Each application appears as an icon.
+Each agent and system tool appears as an icon.
 
 Example
 
 ```
-Calculator
+Finance Agent
 
-Text Editor
+Coding Agent
 
-Task Manager
+Research Agent
+
+Agent Studio
 
 Terminal
 
@@ -4882,7 +4911,7 @@ Settings
 Device Manager
 ```
 
-Double-click launches the application.
+Double-click launches the agent or tool.
 
 ---
 
@@ -4890,34 +4919,34 @@ Double-click launches the application.
 
 The Taskbar displays
 
-- Running Apps
-- Active App
+- Running Agents
+- Active Agent
 - Notifications
 - Quick Settings
 - Search
 - Time
 - Voice Status
 
-It updates automatically whenever processes change.
+It updates automatically whenever agent processes change.
 
 ---
 
 # 105. Dock
 
-The Dock contains frequently used applications.
+The Dock contains frequently used agents.
 
-Users can pin or unpin apps.
+Users can pin or unpin agents.
 
 Example
 
 ```
-Calculator
+Finance Agent
 
-Explorer
+Coding Agent
 
-Settings
+Research Agent
 
-Browser
+Agent Studio
 
 Terminal
 ```
@@ -4941,7 +4970,7 @@ Updates
 
 Print Completed
 
-Application Installed
+Agent Task Completed
 ```
 
 Notifications arrive through WebSockets.
@@ -4952,7 +4981,7 @@ Notifications arrive through WebSockets.
 
 Global Search searches
 
-- Applications
+- Agents
 - Files
 - Directories
 - Settings
@@ -4961,33 +4990,177 @@ Search requests pass through the backend.
 
 ---
 
-# 108. Built-in Applications
+# 108. Built-in Agents
 
-Each application demonstrates one subsystem.
+Each agent demonstrates one subsystem.
 
 ---
 
-## Calculator
+## Agent Simulator
+
+Every built-in agent is a simulated process.
+
+There is no local or remote language model powering it.
+
+Agent behaviour is a deterministic pipeline that consumes real CPU time and memory:
+
+```
+Agent Task
+
+↓
+
+Plan
+
+↓
+
+Think
+
+↓
+
+Act (Tool Call)
+
+↓
+
+Report
+
+↓
+
+Result Emitted
+```
+
+The kernel treats each agent like any other process: it has a PCB, a page table, a priority, and a task queue.
+
+---
+
+## Finance Agent
 
 Purpose
 
 Demonstrates
 
 - Process Creation
+- CPU Arithmetic
 - Memory Allocation
+- File Writing (budget reports)
+
+Simulated tools
+
+- query_budget
+- compute_total
 
 ---
 
-## Text Editor
+## Coding Agent
 
 Purpose
 
 Demonstrates
 
-- Filesystem
-- File Saving
-- Reading
-- Writing
+- CPU-bound scheduling
+- Heap allocation
+- File creation (generates source files)
+
+Simulated tools
+
+- read_spec
+- generate_code
+- run_tests
+
+---
+
+## Research Agent
+
+Purpose
+
+Demonstrates
+
+- Filesystem reads
+- Global search
+- Optional Gemini summarization
+
+Simulated tools
+
+- search_files
+- read_file
+- summarize
+
+---
+
+## Writing Agent
+
+Purpose
+
+Demonstrates
+
+- Filesystem writes
+- Text output
+- Spellcheck simulation (dictionary reads)
+
+Simulated tools
+
+- write_draft
+- rewrite
+
+---
+
+## HR Agent
+
+Simulates employee scheduling, onboarding checklists, and policy lookups.
+
+## Legal Agent
+
+Simulates document clause extraction and compliance checks.
+
+## Marketing Agent
+
+Simulates campaign brainstorming and report generation.
+
+## Travel Agent
+
+Simulates itinerary planning and booking workflows.
+
+## Health Agent
+
+Simulates wellness checklists, reminders, and report generation.
+
+---
+
+## Agent Studio
+
+Purpose
+
+Lets the user create their own agent.
+
+Inputs
+
+- Name
+- Role description (system prompt)
+- Personality
+- Color and icon
+- Tool selection
+- Priority and initial memory budget
+
+Flow
+
+```
+User Saves Agent Config
+
+↓
+
+Config Stored in SQLite
+
+↓
+
+Agent Record Created
+
+↓
+
+Registered in Agent Hub
+
+↓
+
+User Launches → Process Created
+```
 
 ---
 
@@ -5010,7 +5183,7 @@ Purpose
 
 Displays
 
-- Running Processes
+- Running Agent Processes
 - Scheduler
 - PCB
 - CPU Usage
@@ -5072,7 +5245,7 @@ Overall
 - Memory
 - Disk
 - Devices
-- Processes
+- Agent Processes
 - Logs
 
 ---
@@ -5238,7 +5411,7 @@ The frontend should
 
 - Maintain 60 FPS animations
 - Avoid unnecessary re-renders
-- Lazy load applications
+- Lazy load heavy components
 - Use memoization where appropriate
 - Minimize WebSocket payload size
 - Separate UI state from Kernel state
@@ -5255,13 +5428,13 @@ The Frontend Architecture is complete when
 
 ✓ Taskbar updates automatically.
 
-✓ Applications communicate only through APIs.
+✓ Agents and tools communicate only through APIs.
 
 ✓ WebSockets synchronize UI in real time.
 
 ✓ Notifications display kernel events.
 
-✓ All built-in applications function correctly.
+✓ All built-in agents run correctly as processes.
 
 ✓ Boot and Login screens work.
 
@@ -5406,13 +5579,13 @@ The output is always plain text.
 Example
 
 ```
-"Open Calculator"
+"Launch the Finance Agent"
 ```
 
 ↓
 
 ```
-open calculator
+launch the finance agent
 ```
 
 No kernel interaction occurs at this stage.
@@ -5470,15 +5643,15 @@ Example
 Input
 
 ```
-Open Calculator
+Launch the Finance Agent
 ```
 
 Output
 
 ```json
 {
-  "action":"open_app",
-  "target":"calculator"
+  "action":"launch_agent",
+  "target":"finance"
 }
 ```
 
@@ -5492,18 +5665,19 @@ No LLM required.
 
 Commands handled without AI
 
-- Open App
-- Close App
+- Launch Agent
+- Close Agent
+- Ask Agent (route task to an agent)
 - Kill Process
-- Open Task Manager
+- Show Tasks
 - Show Memory
 - Show CPU
 - Create Folder
 - Delete File
 - Restart
 - Shutdown
-- Install App
-- Uninstall App
+- Install Agent
+- Uninstall Agent
 - Search Files
 - Device Manager
 - Interrupt Simulation
@@ -5582,7 +5756,7 @@ Create three text files
 
 ↓
 
-Open Text Editor
+Ask the Coding Agent to review them
 
 ↓
 
@@ -5602,7 +5776,7 @@ Every important action should receive voice confirmation.
 Examples
 
 ```
-Calculator opened.
+Finance Agent report ready.
 
 Memory allocated.
 
@@ -5630,11 +5804,11 @@ The AI can proactively announce events.
 Examples
 
 ```
-Memory usage exceeded ninety percent.
+Coding Agent finished its task.
 
 Printing complete.
 
-Application installed.
+Agent installed.
 
 Battery low.
 
@@ -5734,15 +5908,19 @@ Frontend communicates using REST APIs.
 Examples
 
 ```
-POST /applications/open
+POST /agents/launch
 
-POST /applications/close
+POST /agents/close
+
+POST /agents/task
 
 POST /process/create
 
 POST /process/kill
 
 GET /processes
+
+GET /agents
 
 GET /memory
 
@@ -5813,9 +5991,9 @@ Tables
 ```
 Users
 
-Applications
+Agents
 
-InstalledApps
+InstalledAgents
 
 Logs
 
@@ -5899,7 +6077,7 @@ CPU
 
 ↓
 
-Application Starts
+Agent Starts (process run)
 
 ↓
 
@@ -5988,7 +6166,9 @@ Taskbar
 
 Window Manager
 
-Applications
+Agent Hub & Consoles
+
+Agent Studio
 
 ---
 
@@ -6054,7 +6234,7 @@ Integration Tests
 End-to-End Tests
 
 - Boot OS
-- Open Applications
+- Launch and run Agents
 - Save Files
 - Voice Commands
 - Shutdown
