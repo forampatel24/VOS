@@ -597,7 +597,7 @@ CPU   Process  Memory   FileSys   Device
 | Speech-to-Text | Faster-Whisper | Speech-to-Text |
 | Wake Word | OpenWakeWord | Always-on "Hey JARVIS" detection |
 | Text-to-Speech | pyttsx3 | Offline Voice Output |
-| AI Integration | Gemini API | Natural Language Understanding (reasoning only) |
+| AI Integration | Rule-based AI (local) | Natural Language Understanding (reasoning only, no API key) |
 | Kernel Testing | Google Test | Unit tests for C kernel modules |
 | Backend Testing | pytest | Bridge and API tests |
 | Frontend Testing | Vitest + React Testing Library + Playwright | Component and end-to-end tests |
@@ -4202,7 +4202,7 @@ Simple Commands             Complex Commands
 
           ▼                         ▼
 
-     Kernel API               Gemini API
+     Kernel API               Rule-based AI
 
           │                         │
 

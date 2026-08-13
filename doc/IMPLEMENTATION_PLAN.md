@@ -79,7 +79,7 @@ Constants that DID NOT change:
 | Data | **Axios · WebSocket** | command + live push |
 | Charts | **Recharts** | CPU / RAM / processes |
 | Voice | **Faster-Whisper · OpenWakeWord · pyttsx3** | STT · wake word · TTS |
-| AI reasoning | **Gemini API** (Google GenAI SDK) | only reasoning tasks |
+| AI reasoning | **Rule-based AI** (local, no API key) | only reasoning tasks |
 | Database | **SQLite + SQLAlchemy** | persistent metadata only |
 | Kernel testing | **Google Test** | unit tests in C |
 | Bridge/backend tests | **pytest · pytest-asyncio** | bridge + API tests |

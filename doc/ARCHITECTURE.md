@@ -6281,9 +6281,9 @@ Version 1 security goals
 - Restrict direct filesystem access.
 - Sanitize voice commands.
 - Protect configuration files.
-- Never expose Gemini API keys.
-- Log privileged operations.
+- Never expose agent API keys.
 
+- Agents are rule-based; no API keys required for agent decisions.
 ---
 
 # 140. Performance Goals

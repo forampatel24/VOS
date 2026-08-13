@@ -164,7 +164,7 @@ pyttsx3
 
 AI
 
-Google Gemini API
+Rule-based AI Engine
 
 Only for reasoning tasks.
 
