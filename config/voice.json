@@ -1,0 +1,8 @@
+{
+  "wakeWord": "Hey JARVIS",
+  "wakeWordSensitivity": "medium",
+  "ttsEngine": "pyttsx3",
+  "ttsVoice": "en-US-JennyNeural",
+  "commandParser": "rule-based",
+  "localProcessing": true
+}

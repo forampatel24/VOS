@@ -1,0 +1,10 @@
+{
+  "name": "default",
+  "primaryColor": "#00ffff",
+  "secondaryColor": "#0088ff",
+  "accentColor": "#ff00ff",
+  "fontFamily": "Roboto, sans-serif",
+  "themeMode": "system", // system, light, dark
+  "animations": "smooth",
+  "wallpaper": "default.jpg"
+}

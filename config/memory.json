@@ -1,0 +1,8 @@
+{
+  "totalPages": 1024,
+  "pageSize": "4KB",
+  "replacementAlgorithm": "clock",
+  "swapEnabled": true,
+  "swapPath": ".swap",
+  "agentMemoryLimit": 64 // MB per agent
+}

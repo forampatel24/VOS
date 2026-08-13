@@ -1,0 +1,7 @@
+{
+  "pageTableStrategy": "per-agent",
+  "presentBit": true,
+  "dirtyBit": true,
+  "referencedBit": true,
+  "framePoolSize": 256
+}
