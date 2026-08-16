@@ -4229,6 +4229,8 @@ Voice interaction is the primary feature that differentiates JARVIS OS from a co
 
 Users should feel as though they are interacting with a real intelligent operating system rather than clicking buttons.
 
+Voice is a **secondary I/O layer**. Every feature that can be controlled by voice must also be fully executable without voice — through the clock-driven JSON ABI, the shell, and the GUI. Voice maps speech to the same kernel commands used by the text/UI paths and speaks the same responses back. Nothing in the OS may be reachable only by voice.
+
 ---
 
 ## Voice Pipeline

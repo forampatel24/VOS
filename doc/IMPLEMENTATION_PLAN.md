@@ -258,6 +258,7 @@ Rules:
 
 ## M14 — Voice
 - STT (Faster-Whisper), wake word (OpenWakeWord) gating "Hey JARVIS", local intent parser → `jvk_command`, TTS (pyttsx3) confirmations.
+- **Principle:** Voice is a secondary I/O layer. Every voice-capable feature must already be executable without voice (JSON ABI / shell / GUI). Voice only maps speech → `jvk_command` and responses → speech.
 - **DoD:** "launch finance agent" → kernel call without network; <1s local.
 
 ---

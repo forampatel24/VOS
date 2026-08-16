@@ -5453,6 +5453,8 @@ The next and final part (Part 6) defines the AI Architecture, Voice Pipeline, Wa
 
 # Part 6 — AI Architecture, Voice Pipeline, API Contracts & Deployment
 
+**Voice is a secondary I/O layer.** Voice (speech in / speech out) is one of several ways to drive JARVIS OS; it is never the only way. Every capability — launching agents, dispatching tasks, process control, filesystem, scheduling, memory, shell, devices — must be fully executable through the core clock-driven JSON ABI, the shell, and the GUI **without voice**. Voice only translates speech into the same kernel commands (and kernel responses into speech) that the text/clock/UI paths already use. Nothing may exist only as a voice feature.
+
 ---
 
 # 116. AI Architecture Overview

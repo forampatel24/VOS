@@ -800,6 +800,12 @@ Random glowing effects.
 
 # Voice Rules
 
+Voice is a secondary I/O layer, not the primary execution path.
+
+Every feature must also be executable without voice — through the clock-driven JSON ABI, the shell, or the GUI.
+
+Voice only maps speech → kernel commands and kernel responses → speech.
+
 Simple commands
 
 ↓
