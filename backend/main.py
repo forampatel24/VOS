@@ -10,7 +10,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from backend.services.kernel_loader import (
     jvk_command,
@@ -23,9 +23,12 @@ from backend.services.kernel_loader import (
 
 
 class CommandRequest(BaseModel):
+    # Accept flat extra fields; the kernel expects one flat command dict,
+    # so both {"action": X, "program": [...]} and the legacy nested
+    # {"action": X, "data": {...}} shape are forwarded unchanged.
+    model_config = ConfigDict(extra="allow")
+
     action: str
-    # optional fields forwarded as-is (agent, message, pid, ...)
-    data: dict = {}
 
 
 @asynccontextmanager
@@ -47,7 +50,8 @@ def health() -> dict:
 
 @app.post("/api/command")
 def command(req: CommandRequest) -> dict:
-    payload = {"action": req.action, **req.data}
+    fields = req.model_dump(exclude={"action"})
+    payload = {"action": req.action, **fields.pop("data", {}), **fields}
     return jvk_command(payload)
 
 
