@@ -11,6 +11,12 @@ kernel/build/
 kernel/*.dll
 kernel/*.a
 kernel/*.exe
+kernel/*.o
+kernel/**/*.o
+
+# Local secrets / environment
+.env
+.env.local
 
 # Node / Electron
 node_modules/
