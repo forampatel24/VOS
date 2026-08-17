@@ -61,6 +61,85 @@ def test_jvk_logs_are_incremental() -> None:
     assert later == []
 
 
+# ---- M2 CPU & clock ---------------------------------------------------
+
+SUM_PROGRAM = [
+    0x1000, 0,      # MOV R0, 0
+    0x1100, 10,     # MOV R1, 10
+    0x2010,         # loop: ADD R0, R1
+    0x1200, 1,      # MOV R2, 1
+    0x3120,         # SUB R1, R2
+    0x6000, 12,     # JZ  halt
+    0x5000, 4,      # JMP loop
+    0x8000,         # halt: HALT
+]
+
+
+def test_cpu_load_program() -> None:
+    jvk_init({"boot": True})
+    result = jvk_command({"action": "cpu_load_program", "program": SUM_PROGRAM})
+    assert result["ok"] is True
+    assert result["words"] == len(SUM_PROGRAM)
+
+
+def test_cpu_program_runs_to_halt() -> None:
+    jvk_init({"boot": True})
+    jvk_command({"action": "cpu_load_program", "program": SUM_PROGRAM})
+    for _ in range(200):
+        snap = jvk_snapshot()
+        if snap["cpu"]["halted"]:
+            break
+        jvk_tick()
+    snap = jvk_snapshot()
+    assert snap["cpu"]["halted"] is True
+    assert snap["cpu"]["registers"]["R0"] == 55
+    assert snap["cpu"]["pc"] == 12
+
+
+def test_cpu_reset_clears_registers() -> None:
+    jvk_init({"boot": True})
+    jvk_command({"action": "cpu_load_program", "program": SUM_PROGRAM})
+    for _ in range(10):
+        jvk_tick()
+    jvk_command({"action": "cpu_reset"})
+    snap = jvk_snapshot()
+    assert snap["cpu"]["pc"] == 0
+    assert snap["cpu"]["halted"] is False
+    assert snap["cpu"]["registers"]["R0"] == 0
+
+
+def test_cpu_step_executes_one_instruction() -> None:
+    jvk_init({"boot": True})
+    jvk_command({"action": "cpu_load_program", "program": [0x1000, 0, 0x1100, 10, 0x8000]})
+    r = jvk_command({"action": "cpu_step"})
+    assert r["ok"] is True
+    assert r["pc"] == 2
+    assert r["R0"] == 0
+    r = jvk_command({"action": "cpu_step"})
+    assert r["pc"] == 4
+    assert r["R1"] == 10
+    r = jvk_command({"action": "cpu_step"})
+    assert r["halted"] is True
+
+
+def test_cpu_cmp_sets_zero_flag() -> None:
+    jvk_init({"boot": True})
+    # MOV R0,5 ; MOV R1,5 ; CMP R0,R1 ; HALT
+    jvk_command({"action": "cpu_load_program", "program": [0x1000, 5, 0x1100, 5, 0x4010, 0x8000]})
+    for _ in range(10):
+        jvk_tick()
+    snap = jvk_snapshot()
+    assert snap["cpu"]["halted"] is True
+    assert snap["cpu"]["flags"]["Z"] is True
+
+
+def test_clock_config_is_parsed() -> None:
+    jvk_init({"boot": True, "clock": {"speed_hz": 2000, "quantum": 3}})
+    snap = jvk_snapshot()
+    assert snap["clock"]["speed_hz"] == 2000
+    assert snap["clock"]["quantum"] == 3
+
+
 def test_fastapi_health_endpoint() -> None:
     with TestClient(app) as client:
         resp = client.get("/health")

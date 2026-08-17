@@ -4,7 +4,8 @@
   "secondaryColor": "#0088ff",
   "accentColor": "#ff00ff",
   "fontFamily": "Roboto, sans-serif",
-  "themeMode": "system", // system, light, dark
+  "themeMode": "system",
   "animations": "smooth",
-  "wallpaper": "default.jpg"
+  "wallpaper": "default.jpg",
+  "_comment": "themeMode: system, light, dark"
 }

@@ -1,0 +1,6 @@
+{
+  "clock": {
+    "speed_hz": 1000,
+    "quantum": 10
+  }
+}

@@ -1,7 +1,8 @@
 {
   "algorithm": "round-robin",
-  "timeSlice": 10, // milliseconds per agent tick
+  "timeSlice": 10,
   "maxAgents": 64,
   "priorityLevels": 5,
-  "contextSwitchOverhead": 1 // ms
+  "contextSwitchOverhead": 1,
+  "_comment": "timeSlice and contextSwitchOverhead are in milliseconds per agent tick"
 }

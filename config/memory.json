@@ -4,5 +4,6 @@
   "replacementAlgorithm": "clock",
   "swapEnabled": true,
   "swapPath": ".swap",
-  "agentMemoryLimit": 64 // MB per agent
+  "agentMemoryLimit": 64,
+  "_comment": "agentMemoryLimit is in MB per agent"
 }

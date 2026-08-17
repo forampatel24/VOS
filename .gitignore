@@ -1,4 +1,4 @@
-# Local toolchain links (gcc, nasm, ...) — machine-specific, never commit
+# Local toolchain links (gcc, nasm, ...) - machine-specific, never commit
 .toolchain/
 
 # Python
