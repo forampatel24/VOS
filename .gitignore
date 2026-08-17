@@ -1,0 +1,22 @@
+# Local toolchain links (gcc, nasm, ...) — machine-specific, never commit
+.toolchain/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Build artifacts
+kernel/build/
+kernel/*.dll
+kernel/*.a
+kernel/*.exe
+
+# Node / Electron
+node_modules/
+dist/
+frontend/dist/
+frontend/out/
+
+# Test / tooling caches
+.pytest_cache/
