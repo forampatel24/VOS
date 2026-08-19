@@ -21,17 +21,20 @@ LDFLAGS ?= -static-libgcc
 
 TARGET   = jarvis_kernel.dll
 IMPLIB   = libjarvis_kernel.a
-TESTBIN  = test_cpu.exe
+TESTBINS = test_cpu.exe test_process.exe
 
 SRCDIR   = core
 CPUDIR   = cpu
 SCHEDDIR = scheduler
+PROCDIR  = process
 ASMDIR   = asm
 DEPSDIR  = deps/cJSON
 
 SRCS = $(SRCDIR)/kernel.c \
        $(CPUDIR)/alu.c $(CPUDIR)/clock.c $(CPUDIR)/cpu.c \
        $(SCHEDDIR)/scheduler.c \
+       $(PROCDIR)/context_switch.c $(PROCDIR)/pid_gen.c \
+       $(PROCDIR)/process_manager.c $(PROCDIR)/queues.c \
        $(DEPSDIR)/cJSON.c
 
 ASM_SRC = $(ASMDIR)/context_switch.S
@@ -55,11 +58,15 @@ $(DEPSDIR)/cJSON.o: $(DEPSDIR)/cJSON.c
 $(ASM_OBJ): $(ASM_SRC)
 	$(NASM) -f win64 -o $@ $<
 
-test: $(TARGET) $(TESTBIN)
-	$(TESTBIN)
+test: $(TARGET) test_cpu.exe test_process.exe
+	./test_cpu.exe
+	./test_process.exe
 
-$(TESTBIN): tests/test_cpu.c $(OBJS)
+test_cpu.exe: tests/test_cpu.c $(OBJS)
 	$(CC) $(CFLAGS) -I. tests/test_cpu.c $(OBJS) $(LDFLAGS) -o $@
 
+test_process.exe: tests/test_process.c $(OBJS)
+	$(CC) $(CFLAGS) -I. tests/test_process.c $(OBJS) $(LDFLAGS) -o $@
+
 clean:
-	rm -f $(OBJS) $(TARGET) $(IMPLIB) $(TESTBIN)
+	rm -f $(OBJS) $(TARGET) $(IMPLIB) $(TESTBINS)

@@ -17,6 +17,10 @@ add_library(jarvis_kernel SHARED
     cpu/clock.c
     cpu/cpu.c
     scheduler/scheduler.c
+    process/context_switch.c
+    process/pid_gen.c
+    process/process_manager.c
+    process/queues.c
     deps/cJSON/cJSON.c
     asm/context_switch.S
 )

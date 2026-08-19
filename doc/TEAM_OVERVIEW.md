@@ -46,8 +46,8 @@ JARVIS OS is a fully software-based educational operating system simulator that 
 | M0 | Project Skeleton | Repo layout, config files, 4 aligned docs, FastAPI bridge skeleton | ✅ |
 | M1 | Toolchain & Kernel Build | C kernel → `jarvis_kernel.dll` (gcc + NASM), ctypes bridge, JSON ABI, 16-test pytest suite | ✅ |
 | M2 | CPU & Clock | Registers + ALU, fetch-decode-execute loop, configurable clock + timer interrupt, NASM context-switch stub, round-robin scheduler stub | ✅ |
-| M3a | Process Manager | PCB, PID generator, ready/waiting/suspended/terminated queues, lifecycle state machine, suspend/resume/kill, real register+PC context switching | ▶ |
-| M3b | Memory Manager | Frames + page tables, virtual memory with paging, MMU translation, allocators (first/best/worst fit), replacement (FIFO/LRU/Clock), swap in/out, page faults | ○ |
+| M3a | Process Manager | PCB, PID generator, ready/waiting/suspended/terminated queues, lifecycle state machine, suspend/resume/kill, real register+PC context switching | ✅ |
+| M3b | Memory Manager | Frames + page tables, virtual memory with paging, MMU translation, allocators (first/best/worst fit), replacement (FIFO/LRU/Clock), swap in/out, page faults | ▶ |
 | M4 | Interrupt Controller & Error Manager | Priority interrupt queue, ISR registry, error recovery, simulated panic flag — kernel never crashes | ○ |
 | M5 | File System & Disk | Virtual disk, directory/file tree, CRUD, permissions, open-FD table — never touches real Windows paths | ○ |
 | M6 | Device Manager & Drivers | Common device interface, keyboard/mouse/display/printer/disk/clock drivers, I/O queues, buffers, printer spooler | ○ |
@@ -135,5 +135,5 @@ This is the highlight-reel demo we will show faculty.
 ## 7. Where We Are Right Now
 
 - ✅ **M0, M1, M2 complete** — kernel builds as `jarvis_kernel.dll`, bridge works, 16 tests pass, live server boots the kernel and runs CPU programs end-to-end.
-- ▶ **Next milestone: M3a Process Manager** (the kernel gets real processes).
+- ▶ **Next milestone: M3b Memory Manager** (frames, page tables, and virtual memory).
 - The order matters: kernel core first (processes → memory → interrupts → filesystem → devices → IPC), then shell, then the agent layer, then the clickable desktop (MVP), then voice and AI on top.

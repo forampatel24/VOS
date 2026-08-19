@@ -32,6 +32,7 @@
 #include "cpu/cpu.h"
 #include "cpu/registers.h"
 #include "deps/cJSON/cJSON.h"
+#include "process/process_manager.h"
 #include "scheduler/scheduler.h"
 
 /* ---- kernel state --------------------------------------------------- */
@@ -55,6 +56,7 @@ static char          g_log_buf[JVK_LOG_CAP * (JVK_LOG_LEN + 32)];
 static jvk_cpu_t     g_cpu;
 static jvk_clock_t   g_clock;
 static jvk_scheduler_t g_sched;
+static jvk_process_manager_t g_pm;
 static int           g_cpu_halt_logged = 0;
 
 /* ---- logging --------------------------------------------------------- */
@@ -95,6 +97,57 @@ static const char* fail(const char* msg)
     return g_cmd_buf;
 }
 
+/* ---- process helpers -------------------------------------------------- */
+
+static void queue_to_json(const jvk_queue_t* q, cJSON* arr)
+{
+    for (int i = 0; i < q->count; i++) {
+        cJSON_AddItemToArray(arr, cJSON_CreateNumber(q->items[i]));
+    }
+}
+
+static void queues_to_json(cJSON* root, const char* key,
+                           const jvk_process_manager_t* pm)
+{
+    cJSON* q = cJSON_CreateObject();
+
+    cJSON* ready = cJSON_CreateArray();
+    queue_to_json(&pm->ready, ready);
+    cJSON_AddItemToObject(q, "ready", ready);
+
+    cJSON* waiting = cJSON_CreateArray();
+    queue_to_json(&pm->waiting, waiting);
+    cJSON_AddItemToObject(q, "waiting", waiting);
+
+    cJSON* suspended = cJSON_CreateArray();
+    queue_to_json(&pm->suspended, suspended);
+    cJSON_AddItemToObject(q, "suspended", suspended);
+
+    cJSON* terminated = cJSON_CreateArray();
+    queue_to_json(&pm->terminated, terminated);
+    cJSON_AddItemToObject(q, "terminated", terminated);
+
+    cJSON_AddItemToObject(root, key, q);
+}
+
+static void process_list_to_json(cJSON* arr, const jvk_process_manager_t* pm)
+{
+    for (int i = 0; i < JVK_MAX_PROCS; i++) {
+        const jvk_pcb_t* p = &pm->pcbs[i];
+        if (p->pid == 0) {
+            continue;
+        }
+        cJSON* item = cJSON_CreateObject();
+        cJSON_AddNumberToObject(item, "pid", p->pid);
+        cJSON_AddStringToObject(item, "name", p->name);
+        cJSON_AddStringToObject(item, "state", pm_state_name(p->state));
+        cJSON_AddNumberToObject(item, "priority", p->priority);
+        cJSON_AddNumberToObject(item, "created_ticks", (double)p->created_ticks);
+        cJSON_AddNumberToObject(item, "cpu_used", p->cpu_used);
+        cJSON_AddItemToArray(arr, item);
+    }
+}
+
 /* ---- ABI implementation --------------------------------------------- */
 
 const char* jvk_init(const char* config_json)
@@ -131,6 +184,7 @@ const char* jvk_init(const char* config_json)
     cpu_init(&g_cpu);
     clock_init(&g_clock, speed_hz, quantum);
     scheduler_init(&g_sched);
+    pm_init(&g_pm);
 
     jvk_log("kernel booted");
     char msg[JVK_LOG_LEN];
@@ -140,6 +194,7 @@ const char* jvk_init(const char* config_json)
     if (g_sched.ctx_verified) {
         jvk_log("context_switch: asm stub verified");
     }
+    jvk_log("process_manager: ready");
 
     snprintf(g_init_buf, sizeof(g_init_buf), "ok");
     return g_init_buf;
@@ -217,6 +272,74 @@ const char* jvk_command(const char* action_json)
             snprintf(key, sizeof(key), "R%d", i);
             cJSON_AddNumberToObject(result, key, g_cpu.regs.r[i]);
         }
+    } else if (strcmp(action, "create_process") == 0) {
+        cJSON* name_item = cJSON_GetObjectItemCaseSensitive(req, "name");
+        cJSON* prio_item = cJSON_GetObjectItemCaseSensitive(req, "priority");
+        const char* name = cJSON_IsString(name_item) ? name_item->valuestring
+                                                     : "process";
+        int priority = cJSON_IsNumber(prio_item) ? (int)prio_item->valuedouble
+                                                 : 0;
+        int pid = 0;
+        if (pm_create(&g_pm, name, priority, g_ticks, &pid)) {
+            scheduler_register(&g_sched, pid, name);
+            char msg[JVK_LOG_LEN];
+            snprintf(msg, sizeof(msg), "PROCESS_CREATED pid=%d name=%s", pid, name);
+            jvk_log(msg);
+            cJSON_AddBoolToObject(result, "ok", 1);
+            cJSON_AddNumberToObject(result, "pid", pid);
+            cJSON_AddStringToObject(result, "name", name);
+        } else {
+            cJSON_AddBoolToObject(result, "ok", 0);
+            cJSON_AddStringToObject(result, "error", "process table full");
+        }
+    } else if (strcmp(action, "kill_process") == 0) {
+        cJSON* pid_item = cJSON_GetObjectItemCaseSensitive(req, "pid");
+        int pid = cJSON_IsNumber(pid_item) ? (int)pid_item->valuedouble : -1;
+        if (pm_kill(&g_pm, pid)) {
+            scheduler_unregister(&g_sched, pid);
+            char msg[JVK_LOG_LEN];
+            snprintf(msg, sizeof(msg), "PROCESS_KILLED pid=%d", pid);
+            jvk_log(msg);
+            cJSON_AddBoolToObject(result, "ok", 1);
+            cJSON_AddNumberToObject(result, "pid", pid);
+        } else {
+            cJSON_AddBoolToObject(result, "ok", 0);
+            cJSON_AddStringToObject(result, "error", "process not found");
+        }
+    } else if (strcmp(action, "suspend_process") == 0) {
+        cJSON* pid_item = cJSON_GetObjectItemCaseSensitive(req, "pid");
+        int pid = cJSON_IsNumber(pid_item) ? (int)pid_item->valuedouble : -1;
+        if (pm_suspend(&g_pm, pid)) {
+            scheduler_set_ready(&g_sched, pid, 0);
+            char msg[JVK_LOG_LEN];
+            snprintf(msg, sizeof(msg), "PROCESS_SUSPENDED pid=%d", pid);
+            jvk_log(msg);
+            cJSON_AddBoolToObject(result, "ok", 1);
+            cJSON_AddNumberToObject(result, "pid", pid);
+        } else {
+            cJSON_AddBoolToObject(result, "ok", 0);
+            cJSON_AddStringToObject(result, "error", "cannot suspend process");
+        }
+    } else if (strcmp(action, "resume_process") == 0) {
+        cJSON* pid_item = cJSON_GetObjectItemCaseSensitive(req, "pid");
+        int pid = cJSON_IsNumber(pid_item) ? (int)pid_item->valuedouble : -1;
+        if (pm_resume(&g_pm, pid)) {
+            scheduler_set_ready(&g_sched, pid, 1);
+            char msg[JVK_LOG_LEN];
+            snprintf(msg, sizeof(msg), "PROCESS_RESUMED pid=%d", pid);
+            jvk_log(msg);
+            cJSON_AddBoolToObject(result, "ok", 1);
+            cJSON_AddNumberToObject(result, "pid", pid);
+        } else {
+            cJSON_AddBoolToObject(result, "ok", 0);
+            cJSON_AddStringToObject(result, "error", "cannot resume process");
+        }
+    } else if (strcmp(action, "list_processes") == 0) {
+        cJSON* arr = cJSON_CreateArray();
+        process_list_to_json(arr, &g_pm);
+        cJSON_AddItemToObject(result, "processes", arr);
+        queues_to_json(result, "queues", &g_pm);
+        cJSON_AddBoolToObject(result, "ok", 1);
     } else {
         jvk_set_error("unknown action");
         jvk_log("command rejected: unknown action");
@@ -274,8 +397,13 @@ const char* jvk_snapshot(void)
     cJSON_AddBoolToObject(root, "booted", g_booted);
     cJSON_AddBoolToObject(root, "shutdown", g_shutdown);
     cJSON_AddNumberToObject(root, "uptime_ticks", g_ticks);
-    cJSON_AddNumberToObject(root, "processes", g_sched.count);
+    cJSON_AddNumberToObject(root, "processes", g_pm.count);
     cJSON_AddNumberToObject(root, "memory_pages", 0);
+
+    cJSON* proc_list = cJSON_CreateArray();
+    process_list_to_json(proc_list, &g_pm);
+    cJSON_AddItemToObject(root, "process_list", proc_list);
+    queues_to_json(root, "queues", &g_pm);
 
     cJSON* cpu = cJSON_CreateObject();
     cJSON_AddNumberToObject(cpu, "pc", g_cpu.regs.pc);

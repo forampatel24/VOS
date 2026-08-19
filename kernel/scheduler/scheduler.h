@@ -28,6 +28,8 @@ typedef struct {
 
 void scheduler_init(jvk_scheduler_t* sched);
 int  scheduler_register(jvk_scheduler_t* sched, int pid, const char* name);
+int  scheduler_unregister(jvk_scheduler_t* sched, int pid);
+int  scheduler_set_ready(jvk_scheduler_t* sched, int pid, int ready);
 int  scheduler_schedule(jvk_scheduler_t* sched); /* selected pid, or -1 */
 
 #endif /* JARVIS_SCHEDULER_H */

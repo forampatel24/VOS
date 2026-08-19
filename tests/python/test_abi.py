@@ -140,6 +140,90 @@ def test_clock_config_is_parsed() -> None:
     assert snap["clock"]["quantum"] == 3
 
 
+# ---- M3 process manager ------------------------------------------------
+
+def test_create_process_returns_pid() -> None:
+    jvk_init({"boot": True})
+    r = jvk_command({"action": "create_process", "name": "agent_finance"})
+    assert r["ok"] is True
+    assert r["pid"] == 1
+    assert r["name"] == "agent_finance"
+
+
+def test_create_process_increments_pid() -> None:
+    jvk_init({"boot": True})
+    a = jvk_command({"action": "create_process", "name": "alpha"})
+    b = jvk_command({"action": "create_process", "name": "beta"})
+    assert a["pid"] == 1
+    assert b["pid"] == 2
+
+
+def test_process_lifecycle_suspend_resume() -> None:
+    jvk_init({"boot": True})
+    r = jvk_command({"action": "create_process", "name": "alpha"})
+    pid = r["pid"]
+
+    s = jvk_command({"action": "suspend_process", "pid": pid})
+    assert s["ok"] is True
+    snap = jvk_snapshot()
+    assert snap["queues"]["suspended"] == [pid]
+    assert snap["queues"]["ready"] == []
+
+    s = jvk_command({"action": "resume_process", "pid": pid})
+    assert s["ok"] is True
+    snap = jvk_snapshot()
+    assert snap["queues"]["ready"] == [pid]
+    assert snap["queues"]["suspended"] == []
+
+
+def test_process_kill_moves_to_terminated() -> None:
+    jvk_init({"boot": True})
+    r = jvk_command({"action": "create_process", "name": "alpha"})
+    pid = r["pid"]
+    r = jvk_command({"action": "kill_process", "pid": pid})
+    assert r["ok"] is True
+    snap = jvk_snapshot()
+    assert snap["queues"]["terminated"] == [pid]
+    assert snap["queues"]["ready"] == []
+    assert snap["processes"] == 0
+
+
+def test_process_bad_pid_rejected() -> None:
+    jvk_init({"boot": True})
+    assert jvk_command({"action": "kill_process", "pid": 999})["ok"] is False
+    assert jvk_command({"action": "suspend_process", "pid": 999})["ok"] is False
+    assert jvk_command({"action": "resume_process", "pid": 999})["ok"] is False
+
+
+def test_list_processes_reports_state() -> None:
+    jvk_init({"boot": True})
+    a = jvk_command({"action": "create_process", "name": "alpha"})
+    b = jvk_command({"action": "create_process", "name": "beta"})
+    jvk_command({"action": "suspend_process", "pid": a["pid"]})
+
+    r = jvk_command({"action": "list_processes"})
+    assert r["ok"] is True
+    states = {p["pid"]: p["state"] for p in r["processes"]}
+    assert states[a["pid"]] == "SUSPENDED"
+    assert states[b["pid"]] == "READY"
+    assert r["queues"]["suspended"] == [a["pid"]]
+
+
+def test_process_events_are_logged() -> None:
+    jvk_init({"boot": True})
+    r = jvk_command({"action": "create_process", "name": "alpha"})
+    pid = r["pid"]
+    jvk_command({"action": "suspend_process", "pid": pid})
+    jvk_command({"action": "resume_process", "pid": pid})
+    jvk_command({"action": "kill_process", "pid": pid})
+
+    logs = " | ".join(e["message"] for e in jvk_logs(0)["logs"])
+    assert "PROCESS_CREATED" in logs
+    assert "PROCESS_SUSPENDED" in logs
+    assert "PROCESS_RESUMED" in logs
+    assert "PROCESS_KILLED" in logs
+
+
 def test_fastapi_health_endpoint() -> None:
     with TestClient(app) as client:
         resp = client.get("/health")

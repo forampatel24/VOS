@@ -39,6 +39,41 @@ int scheduler_register(jvk_scheduler_t* sched, int pid, const char* name)
     return 1;
 }
 
+static int scheduler_find(const jvk_scheduler_t* sched, int pid)
+{
+    for (int i = 0; i < sched->count; i++) {
+        if (sched->pids[i] == pid) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int scheduler_unregister(jvk_scheduler_t* sched, int pid)
+{
+    int idx = scheduler_find(sched, pid);
+    if (idx < 0) {
+        return 0;
+    }
+    for (int i = idx; i < sched->count - 1; i++) {
+        sched->pids[i]  = sched->pids[i + 1];
+        sched->ready[i] = sched->ready[i + 1];
+        memcpy(sched->names[i], sched->names[i + 1], 32);
+    }
+    sched->count--;
+    return 1;
+}
+
+int scheduler_set_ready(jvk_scheduler_t* sched, int pid, int ready)
+{
+    int idx = scheduler_find(sched, pid);
+    if (idx < 0) {
+        return 0;
+    }
+    sched->ready[idx] = ready;
+    return 1;
+}
+
 int scheduler_schedule(jvk_scheduler_t* sched)
 {
     if (sched->count == 0) {
