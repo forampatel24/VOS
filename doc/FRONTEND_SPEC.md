@@ -305,4 +305,3 @@ From M4 onward **every kernel milestone ships its UI window in the same mileston
 If the desktop is not demo-ready ~5 days before the review: build the bare monitor page
 (old M3c idea — polls `/health` + `/api/logs`) in one evening as the fallback demo UI.
 Never scheduled as a milestone; exists only as written insurance.
-
