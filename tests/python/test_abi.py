@@ -224,6 +224,123 @@ def test_process_events_are_logged() -> None:
     assert "PROCESS_KILLED" in logs
 
 
+# ---- M3b memory manager -------------------------------------------------
+
+MEM_CFG = {"boot": True, "memory": {
+    "totalPages": 16, "allocator": "first_fit",
+    "replacement": "clock", "swapEnabled": True, "swapSlots": 8,
+}}
+
+
+def test_mem_alloc_maps_frames() -> None:
+    jvk_init(MEM_CFG)
+    r = jvk_command({"action": "mem_alloc", "pid": 1, "pages": 2})
+    assert r["ok"] is True
+    assert r["base_vpage"] == 0
+    assert r["contiguous"] is True
+    assert r["frames"] == [0, 1]
+    snap = jvk_snapshot()
+    assert snap["memory"]["stats"]["frames_used"] == 2
+    assert snap["memory"]["stats"]["pages_mapped"] == 2
+    assert snap["memory"]["frame_map"][:2] == [1, 1]
+
+
+def test_mem_read_write_roundtrip() -> None:
+    jvk_init(MEM_CFG)
+    jvk_command({"action": "mem_alloc", "pid": 1, "pages": 2})
+    w = jvk_command({"action": "mem_write", "pid": 1, "addr": 19, "value": 77})
+    assert w["ok"] is True
+    assert w["vpage"] == 1 and w["offset"] == 3
+    r = jvk_command({"action": "mem_read", "pid": 1, "addr": 19})
+    assert r["ok"] is True and r["value"] == 77
+
+
+def test_mem_segv_on_unmapped_access() -> None:
+    jvk_init(MEM_CFG)
+    jvk_command({"action": "mem_alloc", "pid": 1, "pages": 1})
+    r = jvk_command({"action": "mem_read", "pid": 1, "addr": 999})
+    assert r["ok"] is False and "segmentation" in r["error"]
+    assert jvk_snapshot()["memory"]["stats"]["segfaults"] == 1
+
+
+def test_mem_free_releases_frames() -> None:
+    jvk_init(MEM_CFG)
+    jvk_command({"action": "mem_alloc", "pid": 1, "pages": 4})
+    f = jvk_command({"action": "mem_free", "pid": 1})
+    assert f["ok"] is True and f["pages_freed"] == 4
+    stats = jvk_snapshot()["memory"]["stats"]
+    assert stats["frames_used"] == 0
+    assert stats["frames_free"] == 16
+    bad = jvk_command({"action": "mem_free", "pid": 1})
+    assert bad["ok"] is False  # address space already gone
+
+
+def test_kill_process_releases_memory() -> None:
+    jvk_init(MEM_CFG)
+    p = jvk_command({"action": "create_process", "name": "agent_x"})
+    pid = p["pid"]
+    jvk_command({"action": "mem_alloc", "pid": pid, "pages": 3})
+    k = jvk_command({"action": "kill_process", "pid": pid})
+    assert k["ok"] is True
+    assert k["memory_pages_freed"] == 3
+    assert jvk_snapshot()["memory"]["stats"]["frames_used"] == 0
+
+
+def test_mem_pressure_swaps_and_restores_value() -> None:
+    small = {"boot": True, "memory": {
+        "totalPages": 4, "allocator": "first_fit",
+        "replacement": "clock", "swapEnabled": True, "swapSlots": 8,
+    }}
+    jvk_init(small)
+    jvk_command({"action": "mem_alloc", "pid": 1, "pages": 2})
+    jvk_command({"action": "mem_alloc", "pid": 2, "pages": 2})
+    jvk_command({"action": "mem_write", "pid": 1, "addr": 0, "value": 777})
+
+    a = jvk_command({"action": "mem_alloc", "pid": 3, "pages": 1})
+    assert a["ok"] is True  # forced an eviction
+
+    mem = jvk_snapshot()["memory"]
+    assert mem["stats"]["swap_outs"] >= 1
+    assert mem["swap_used"] >= 1
+
+    r = jvk_command({"action": "mem_read", "pid": 1, "addr": 0})
+    assert r["ok"] is True and r["value"] == 777  # survived round-trip
+    logs = " | ".join(e["message"] for e in jvk_logs(0)["logs"])
+    assert "PAGE_FAULT" in logs and "SWAP_IN" in logs
+
+
+def test_mem_oom_without_swap() -> None:
+    tiny = {"boot": True, "memory": {
+        "totalPages": 4, "allocator": "first_fit",
+        "replacement": "clock", "swapEnabled": False,
+    }}
+    jvk_init(tiny)
+    jvk_command({"action": "mem_alloc", "pid": 1, "pages": 4})
+    r = jvk_command({"action": "mem_alloc", "pid": 2, "pages": 1})
+    assert r["ok"] is False and "out of memory" in r["error"]
+
+
+def test_mem_config_switches_strategies() -> None:
+    jvk_init(MEM_CFG)
+    c = jvk_command({"action": "mem_config",
+                     "allocator": "best_fit", "replacement": "lru"})
+    assert c["ok"] is True
+    assert c["allocator"] == "best_fit"
+    assert c["replacement"] == "lru"
+    bad = jvk_command({"action": "mem_config", "allocator": "turbo"})
+    assert bad["ok"] is False
+
+
+def test_memory_events_are_logged() -> None:
+    jvk_init(MEM_CFG)
+    jvk_command({"action": "mem_alloc", "pid": 1, "pages": 1})
+    jvk_command({"action": "mem_write", "pid": 1, "addr": 0, "value": 5})
+    jvk_command({"action": "mem_free", "pid": 1})
+    logs = " | ".join(e["message"] for e in jvk_logs(0)["logs"])
+    assert "MEMORY_ALLOCATED pid=1 pages=1" in logs
+    assert "MEMORY_FREED pid=1" in logs
+
+
 def test_fastapi_health_endpoint() -> None:
     with TestClient(app) as client:
         resp = client.get("/health")

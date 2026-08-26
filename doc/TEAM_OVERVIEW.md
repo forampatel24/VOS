@@ -1,6 +1,6 @@
 # JARVIS OS — Team Overview & Project Status
 
-Version: 1.0 · Date: 2026-08-17
+Version: 1.1 · Date: 2026-08-26
 
 This document is the single overview for the team: what we are building, where the project stands, the step-by-step implementation roadmap, the apps and agents that will exist, and how the final demonstration will run. It is the human-friendly companion to `IMPLEMENTATION_PLAN.md`, `ARCHITECTURE.md`, `PROJECT_SPEC.md`, and `AGENTS.md`.
 
@@ -29,7 +29,6 @@ JARVIS OS is a fully software-based educational operating system simulator that 
 | Bridge | FastAPI (Python) + ctypes + Pydantic |
 | Frontend | Electron · React · TypeScript · Tailwind · Framer Motion · shadcn/ui · Zustand |
 | Live updates | WebSocket (kernel events pushed to the UI, no polling) |
-| Voice (post-MVP) | Faster-Whisper · OpenWakeWord · pyttsx3 |
 | AI reasoning (post-MVP) | Rule-based local AI + Gemini (reasoning only) |
 | Database | SQLite + SQLAlchemy (persistent metadata only — never runtime state) |
 
@@ -47,26 +46,26 @@ JARVIS OS is a fully software-based educational operating system simulator that 
 | M1 | Toolchain & Kernel Build | C kernel → `jarvis_kernel.dll` (gcc + NASM), ctypes bridge, JSON ABI, 16-test pytest suite | ✅ |
 | M2 | CPU & Clock | Registers + ALU, fetch-decode-execute loop, configurable clock + timer interrupt, NASM context-switch stub, round-robin scheduler stub | ✅ |
 | M3a | Process Manager | PCB, PID generator, ready/waiting/suspended/terminated queues, lifecycle state machine, suspend/resume/kill, real register+PC context switching | ✅ |
-| M3b | Memory Manager | Frames + page tables, virtual memory with paging, MMU translation, allocators (first/best/worst fit), replacement (FIFO/LRU/Clock), swap in/out, page faults | ▶ |
-| M4 | Interrupt Controller & Error Manager | Priority interrupt queue, ISR registry, error recovery, simulated panic flag — kernel never crashes | ○ |
-| M5 | File System & Disk | Virtual disk, directory/file tree, CRUD, permissions, open-FD table — never touches real Windows paths | ○ |
-| M6 | Device Manager & Drivers | Common device interface, keyboard/mouse/display/printer/disk/clock drivers, I/O queues, buffers, printer spooler | ○ |
-| M7 | IPC & Synchronization | Message queues, shared memory, pipes, mutex + semaphore, deadlock detection | ○ |
-| M8 | Shell & CLI | Shell + parser (`ps`, `kill`, `memory`, `files`, `mkdir`, `ls`, `shutdown`, …) proxied through the kernel | ○ |
+| M3b | Memory Manager | Frames + page tables, virtual memory with paging, MMU translation, allocators (first/best/worst fit), replacement (FIFO/LRU/Clock), swap in/out, page faults, segfault detection — all config-driven | ✅ |
+| M11a | Frontend Foundation (Electron) | Electron+Vite+React scaffold, WebSocket `/ws` push channel, desktop shell + window manager basics, taskbar/clock; 5 real-state windows: System Monitor, Processes, Memory Viewer, Event Log — honest "subsystem offline" placeholders, never fake data | ▶ |
+| M4 | Interrupt Controller & Error Manager | Priority interrupt queue, ISR registry, error recovery, simulated panic flag — kernel never crashes; wires M3b page faults; Interrupt panel goes live | ○ |
+| M5 | File System & Disk | Virtual disk, directory/file tree, CRUD, permissions, open-FD table — never touches real Windows paths; File Explorer goes live | ○ |
+| M6 | Device Manager & Drivers | Common device interface, keyboard/mouse/display/printer/disk/clock drivers, I/O queues, buffers, printer spooler; Device Manager goes live | ○ |
+| M7 | IPC & Synchronization | Message queues, shared memory, pipes, mutex + semaphore, deadlock detection; IPC Lab goes live | ○ |
+| M8 | Shell & CLI | Shell + parser (`ps`, `kill`, `memory`, `files`, `mkdir`, `ls`, `shutdown`, …) proxied through the kernel; Terminal goes live | ○ |
 | M9a | Agent System Core | Agent Simulator in the kernel (Plan → Think → Act → Report), agent registry, task queues; agents run as real processes | ○ |
-| M9b | Agent Consoles & System Tools | Built-in agents, live consoles, system tools (Task Manager, File Explorer, Memory Viewer, CPU Monitor, Device Manager, Settings) | ○ |
-| M10b | Backend API (full) | Pydantic schemas, REST routers for all subsystems, WebSocket channels pushing live kernel events | ○ |
-| M11 | Desktop & UI | Boot → login → JARVIS desktop, window manager, taskbar, dock, search, notifications, tray, clock — **the clickable OS MVP lands here** | ○ |
+| M9b | Agent Consoles & System Tools | Built-in agents, live consoles, system tools completion (Task Manager, File Explorer, Memory Viewer, CPU Monitor, Device Manager, Settings) | ○ |
+| M10b | Backend API (full) | Pydantic schemas, REST routers for all subsystems, full WebSocket channels pushing live kernel events | ○ |
+| M11b | Desktop Completion | Boot → login → JARVIS desktop polish, window snapping, dock, search, notifications, tray, clock — **the clickable OS MVP lands here** | ○ |
 
-### Phase 2 — Post-MVP (voice + AI + polish, after the clickable OS)
+### Phase 2 — Post-MVP (AI + polish, after the clickable OS)
 
 | # | Milestone | What it delivers | Status |
 |---|---|---|---|
-| M10a | Voice | "Hey JARVIS" wake word, STT, local intent parser → kernel command, TTS confirmations — a secondary I/O layer on the finished OS | ○ |
 | M12 | AI Layer & Gemini | Rule-based local AI; Gemini only for explain-state / automation / health & session summaries; plans execute strictly via kernel commands | ○ |
 | M13 | Testing, Hardening & Packaging | Google Test per C module, pytest integration, Playwright e2e, crash isolation, `electron-builder` → `jarvis.exe` | ○ |
 | M14 | Documentation & Release | Final docs pass, recorded demo, release build | ○ |
-| M15 | Future Enhancements | Ideas beyond core scope | ○ |
+| M15 | Future Enhancements | Ideas beyond core scope. *Voice ("Hey JARVIS") was cut from scope on 2026-07-24.* | ○ |
 
 ---
 
@@ -134,6 +133,8 @@ This is the highlight-reel demo we will show faculty.
 
 ## 7. Where We Are Right Now
 
-- ✅ **M0, M1, M2 complete** — kernel builds as `jarvis_kernel.dll`, bridge works, 16 tests pass, live server boots the kernel and runs CPU programs end-to-end.
-- ▶ **Next milestone: M3b Memory Manager** (frames, page tables, and virtual memory).
-- The order matters: kernel core first (processes → memory → interrupts → filesystem → devices → IPC), then shell, then the agent layer, then the clickable desktop (MVP), then voice and AI on top.
+- ✅ **M0, M1, M2, M3a complete** — kernel builds as `jarvis_kernel.dll`, bridge works, CPU + scheduler + full process lifecycle verified.
+- ✅ **M3b Memory Manager complete** — frame table, per-process page tables, MMU translation with segfault detection, first/best/worst-fit placement (config-driven), FIFO/LRU/Clock replacement (runtime-switchable), swap out/in with data preservation, external-fragmentation fallback, `mem_alloc/mem_free/mem_read/mem_write/mem_config` ABI commands, live snapshot (`frame_map`, `page_tables`, stats). Verified: 3 C smoke tests pass, 32 pytest tests pass, live ctypes round-trip confirmed.
+- ▶ **Next milestone: M11a Frontend Foundation** — Electron+Vite+React scaffold and the `/ws` push channel so the OS becomes visible: System Monitor, Processes, Memory Viewer and Event Log windows driven purely by real kernel state.
+- Then the vertical-slice ladder: each kernel milestone ships its UI window the same milestone (M4 → Interrupt panel, M5 → File Explorer, M6 → Device Manager, M7 → IPC Lab, M8 → Terminal).
+- The order matters: kernel core first (processes → memory → interrupts → filesystem → devices → IPC), then shell, then the agent layer, then the clickable desktop completion (M11b MVP), then AI on top. Voice was cut from scope on 2026-07-24.

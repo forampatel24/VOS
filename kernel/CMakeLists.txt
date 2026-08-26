@@ -13,6 +13,7 @@ set(CMAKE_ASM_NASM_COMPILER
 # Output library (matches the kernel Makefile target)
 add_library(jarvis_kernel SHARED
     core/kernel.c
+    core/kernel_memory.c
     cpu/alu.c
     cpu/clock.c
     cpu/cpu.c
@@ -21,6 +22,13 @@ add_library(jarvis_kernel SHARED
     process/pid_gen.c
     process/process_manager.c
     process/queues.c
+    memory/alloc_strategy.c
+    memory/frame_table.c
+    memory/memory_manager.c
+    memory/mm_types.c
+    memory/page_table.c
+    memory/replace_policy.c
+    memory/swap.c
     deps/cJSON/cJSON.c
     asm/context_switch.S
 )

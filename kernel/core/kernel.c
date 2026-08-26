@@ -32,6 +32,8 @@
 #include "cpu/cpu.h"
 #include "cpu/registers.h"
 #include "deps/cJSON/cJSON.h"
+#include "kernel_memory.h"
+#include "memory/memory_manager.h"
 #include "process/process_manager.h"
 #include "scheduler/scheduler.h"
 
@@ -50,13 +52,14 @@ static int           g_log_count = 0;
 
 static char          g_init_buf[128];
 static char          g_cmd_buf[4096];
-static char          g_snap_buf[4096];
+static char          g_snap_buf[65536];
 static char          g_log_buf[JVK_LOG_CAP * (JVK_LOG_LEN + 32)];
 
 static jvk_cpu_t     g_cpu;
 static jvk_clock_t   g_clock;
 static jvk_scheduler_t g_sched;
 static jvk_process_manager_t g_pm;
+static jvk_memory_manager_t  g_mm;
 static int           g_cpu_halt_logged = 0;
 
 /* ---- logging --------------------------------------------------------- */
@@ -68,6 +71,13 @@ static void jvk_log(const char* msg)
     }
     snprintf(g_logs[g_log_count], JVK_LOG_LEN, "%s", msg);
     g_log_count++;
+}
+
+/* Memory-subsystem events land in the central kernel log. */
+static void mem_event_trampoline(void* user, const char* message)
+{
+    (void)user;
+    jvk_log(message);
 }
 
 static void jvk_set_error(const char* msg)
@@ -154,9 +164,10 @@ const char* jvk_init(const char* config_json)
 {
     int speed_hz = 1000;
     int quantum  = 10;
+    cJSON* root  = NULL;
 
     if (config_json != NULL && config_json[0] != '\0') {
-        cJSON* root = cJSON_Parse(config_json);
+        root = cJSON_Parse(config_json);
         if (root == NULL) {
             return fail("invalid config JSON");
         }
@@ -171,7 +182,6 @@ const char* jvk_init(const char* config_json)
                 quantum = (int)q->valuedouble;
             }
         }
-        cJSON_Delete(root);
     }
 
     g_booted    = 1;
@@ -185,6 +195,12 @@ const char* jvk_init(const char* config_json)
     clock_init(&g_clock, speed_hz, quantum);
     scheduler_init(&g_sched);
     pm_init(&g_pm);
+    if (!kmem_boot(&g_mm, root)) {
+        cJSON_Delete(root);
+        return fail("memory manager init failed");
+    }
+    mm_set_observer(&g_mm, mem_event_trampoline, NULL);
+    cJSON_Delete(root);
 
     jvk_log("kernel booted");
     char msg[JVK_LOG_LEN];
@@ -195,6 +211,13 @@ const char* jvk_init(const char* config_json)
         jvk_log("context_switch: asm stub verified");
     }
     jvk_log("process_manager: ready");
+    jvk_log("memory_manager: ready");
+    snprintf(msg, sizeof(msg),
+             "memory: frames=%d allocator=%s replacement=%s swap=%s",
+             g_mm.cfg.total_frames, mm_alloc_name(g_mm.cfg.allocator),
+             mm_replace_name(g_mm.cfg.replacement),
+             g_mm.cfg.swap_enabled ? "on" : "off");
+    jvk_log(msg);
 
     snprintf(g_init_buf, sizeof(g_init_buf), "ok");
     return g_init_buf;
@@ -297,11 +320,14 @@ const char* jvk_command(const char* action_json)
         int pid = cJSON_IsNumber(pid_item) ? (int)pid_item->valuedouble : -1;
         if (pm_kill(&g_pm, pid)) {
             scheduler_unregister(&g_sched, pid);
+            int freed = mm_free_pid(&g_mm, pid);
             char msg[JVK_LOG_LEN];
             snprintf(msg, sizeof(msg), "PROCESS_KILLED pid=%d", pid);
             jvk_log(msg);
             cJSON_AddBoolToObject(result, "ok", 1);
             cJSON_AddNumberToObject(result, "pid", pid);
+            cJSON_AddNumberToObject(result, "memory_pages_freed",
+                                    freed > 0 ? freed : 0);
         } else {
             cJSON_AddBoolToObject(result, "ok", 0);
             cJSON_AddStringToObject(result, "error", "process not found");
@@ -340,6 +366,12 @@ const char* jvk_command(const char* action_json)
         cJSON_AddItemToObject(result, "processes", arr);
         queues_to_json(result, "queues", &g_pm);
         cJSON_AddBoolToObject(result, "ok", 1);
+    } else if (strncmp(action, "mem_", 4) == 0) {
+        if (!kmem_handle(&g_mm, action, req, result)) {
+            jvk_set_error("unknown action");
+            cJSON_AddBoolToObject(result, "ok", 0);
+            cJSON_AddStringToObject(result, "error", "unknown action");
+        }
     } else {
         jvk_set_error("unknown action");
         jvk_log("command rejected: unknown action");
@@ -398,7 +430,7 @@ const char* jvk_snapshot(void)
     cJSON_AddBoolToObject(root, "shutdown", g_shutdown);
     cJSON_AddNumberToObject(root, "uptime_ticks", g_ticks);
     cJSON_AddNumberToObject(root, "processes", g_pm.count);
-    cJSON_AddNumberToObject(root, "memory_pages", 0);
+    kmem_snapshot(&g_mm, root);
 
     cJSON* proc_list = cJSON_CreateArray();
     process_list_to_json(proc_list, &g_pm);
