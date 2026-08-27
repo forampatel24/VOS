@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #1e2a4a #060a14;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #060a14;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e2a4a;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2a3a5a;
+}
+
+body {
+  font-family: "Inter", system-ui, sans-serif;
+  background: #060a14;
+  overflow: hidden;
+}
+
+.mono {
+  font-family: "JetBrains Mono", monospace;
+}
+
+/* Window animations are handled by Framer Motion; this is fallback */
+.window-enter {
+  animation: windowIn 0.2s ease-out;
+}
+@keyframes windowIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}

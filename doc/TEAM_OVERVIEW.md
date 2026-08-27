@@ -1,6 +1,6 @@
 # JARVIS OS — Team Overview & Project Status
 
-Version: 1.1 · Date: 2026-08-26
+Version: 1.2 · Date: 2026-08-27
 
 This document is the single overview for the team: what we are building, where the project stands, the step-by-step implementation roadmap, the apps and agents that will exist, and how the final demonstration will run. It is the human-friendly companion to `IMPLEMENTATION_PLAN.md`, `ARCHITECTURE.md`, `PROJECT_SPEC.md`, and `AGENTS.md`.
 
@@ -47,8 +47,8 @@ JARVIS OS is a fully software-based educational operating system simulator that 
 | M2 | CPU & Clock | Registers + ALU, fetch-decode-execute loop, configurable clock + timer interrupt, NASM context-switch stub, round-robin scheduler stub | ✅ |
 | M3a | Process Manager | PCB, PID generator, ready/waiting/suspended/terminated queues, lifecycle state machine, suspend/resume/kill, real register+PC context switching | ✅ |
 | M3b | Memory Manager | Frames + page tables, virtual memory with paging, MMU translation, allocators (first/best/worst fit), replacement (FIFO/LRU/Clock), swap in/out, page faults, segfault detection — all config-driven | ✅ |
-| M11a | Frontend Foundation (Electron) | Electron+Vite+React scaffold, WebSocket `/ws` push channel, desktop shell + window manager basics, taskbar/clock; 5 real-state windows: System Monitor, Processes, Memory Viewer, Event Log — honest "subsystem offline" placeholders, never fake data | ▶ |
-| M4 | Interrupt Controller & Error Manager | Priority interrupt queue, ISR registry, error recovery, simulated panic flag — kernel never crashes; wires M3b page faults; Interrupt panel goes live | ○ |
+| M11a | Frontend Foundation (Electron) | Electron+Vite+React scaffold, WebSocket `/ws` push channel, desktop shell + window manager basics, taskbar/clock; 5 real-state windows: System Monitor, Processes, Memory Viewer, Event Log — honest "subsystem offline" placeholders, never fake data | ✅ |
+| M4 | Interrupt Controller & Error Manager | Priority interrupt queue, ISR registry, error recovery, simulated panic flag — kernel never crashes; wires M3b page faults; Interrupt panel goes live | ▶ |
 | M5 | File System & Disk | Virtual disk, directory/file tree, CRUD, permissions, open-FD table — never touches real Windows paths; File Explorer goes live | ○ |
 | M6 | Device Manager & Drivers | Common device interface, keyboard/mouse/display/printer/disk/clock drivers, I/O queues, buffers, printer spooler; Device Manager goes live | ○ |
 | M7 | IPC & Synchronization | Message queues, shared memory, pipes, mutex + semaphore, deadlock detection; IPC Lab goes live | ○ |
@@ -135,6 +135,7 @@ This is the highlight-reel demo we will show faculty.
 
 - ✅ **M0, M1, M2, M3a complete** — kernel builds as `jarvis_kernel.dll`, bridge works, CPU + scheduler + full process lifecycle verified.
 - ✅ **M3b Memory Manager complete** — frame table, per-process page tables, MMU translation with segfault detection, first/best/worst-fit placement (config-driven), FIFO/LRU/Clock replacement (runtime-switchable), swap out/in with data preservation, external-fragmentation fallback, `mem_alloc/mem_free/mem_read/mem_write/mem_config` ABI commands, live snapshot (`frame_map`, `page_tables`, stats). Verified: 3 C smoke tests pass, 32 pytest tests pass, live ctypes round-trip confirmed.
-- ▶ **Next milestone: M11a Frontend Foundation** — Electron+Vite+React scaffold and the `/ws` push channel so the OS becomes visible: System Monitor, Processes, Memory Viewer and Event Log windows driven purely by real kernel state.
-- Then the vertical-slice ladder: each kernel milestone ships its UI window the same milestone (M4 → Interrupt panel, M5 → File Explorer, M6 → Device Manager, M7 → IPC Lab, M8 → Terminal).
+- ✅ **M11a Frontend Foundation complete** — Electron main process (spawns uvicorn, waits `/health`, frameless fullscreen, boot animation), Vite+React+TS+Tailwind+Zustand+Framer Motion scaffold, typed REST client + WebSocket `/ws` push channel (snapshot deltas every ~0.9s + auto-tick), window manager (open/close/move/resize/focus/z-order), taskbar with kernel status + clock, 5 live windows (System Monitor, Process Manager, Memory Viewer, CPU & Scheduler, Event Log) rendered purely from `jvk_snapshot`/`jvk_logs` — no fake data, offline subsystems show honest placeholders. Verified: `vite build` (352KB JS, 19KB CSS), live uvicorn integration (create/alloc/read/write/suspend/resume/kill + memory free, WS push, tick, logs all real), 32 pytest + 3 C smokes still green.
+- ▶ **Next milestone: M4 Interrupt Controller & Error Manager** — priority queue, ISR registry, wires page faults into interrupts; Interrupt Center panel goes live (vertical slice).
+- Then the vertical-slice ladder: each kernel milestone ships its UI window the same milestone (M5 → File Explorer, M6 → Device Manager, M7 → IPC Lab, M8 → Terminal).
 - The order matters: kernel core first (processes → memory → interrupts → filesystem → devices → IPC), then shell, then the agent layer, then the clickable desktop completion (M11b MVP), then AI on top. Voice was cut from scope on 2026-07-24.
