@@ -234,6 +234,7 @@ MEM_CFG = {"boot": True, "memory": {
 
 def test_mem_alloc_maps_frames() -> None:
     jvk_init(MEM_CFG)
+    jvk_command({"action": "create_process", "name": "p1"})
     r = jvk_command({"action": "mem_alloc", "pid": 1, "pages": 2})
     assert r["ok"] is True
     assert r["base_vpage"] == 0
@@ -247,6 +248,7 @@ def test_mem_alloc_maps_frames() -> None:
 
 def test_mem_read_write_roundtrip() -> None:
     jvk_init(MEM_CFG)
+    jvk_command({"action": "create_process", "name": "p1"})
     jvk_command({"action": "mem_alloc", "pid": 1, "pages": 2})
     w = jvk_command({"action": "mem_write", "pid": 1, "addr": 19, "value": 77})
     assert w["ok"] is True
@@ -257,6 +259,7 @@ def test_mem_read_write_roundtrip() -> None:
 
 def test_mem_segv_on_unmapped_access() -> None:
     jvk_init(MEM_CFG)
+    jvk_command({"action": "create_process", "name": "p1"})
     jvk_command({"action": "mem_alloc", "pid": 1, "pages": 1})
     r = jvk_command({"action": "mem_read", "pid": 1, "addr": 999})
     assert r["ok"] is False and "segmentation" in r["error"]
@@ -265,6 +268,7 @@ def test_mem_segv_on_unmapped_access() -> None:
 
 def test_mem_free_releases_frames() -> None:
     jvk_init(MEM_CFG)
+    jvk_command({"action": "create_process", "name": "p1"})
     jvk_command({"action": "mem_alloc", "pid": 1, "pages": 4})
     f = jvk_command({"action": "mem_free", "pid": 1})
     assert f["ok"] is True and f["pages_freed"] == 4
@@ -292,6 +296,8 @@ def test_mem_pressure_swaps_and_restores_value() -> None:
         "replacement": "clock", "swapEnabled": True, "swapSlots": 8,
     }}
     jvk_init(small)
+    for n in ["p1", "p2", "p3"]:
+        jvk_command({"action": "create_process", "name": n})
     jvk_command({"action": "mem_alloc", "pid": 1, "pages": 2})
     jvk_command({"action": "mem_alloc", "pid": 2, "pages": 2})
     jvk_command({"action": "mem_write", "pid": 1, "addr": 0, "value": 777})
@@ -315,6 +321,8 @@ def test_mem_oom_without_swap() -> None:
         "replacement": "clock", "swapEnabled": False,
     }}
     jvk_init(tiny)
+    jvk_command({"action": "create_process", "name": "p1"})
+    jvk_command({"action": "create_process", "name": "p2"})
     jvk_command({"action": "mem_alloc", "pid": 1, "pages": 4})
     r = jvk_command({"action": "mem_alloc", "pid": 2, "pages": 1})
     assert r["ok"] is False and "out of memory" in r["error"]
@@ -331,8 +339,17 @@ def test_mem_config_switches_strategies() -> None:
     assert bad["ok"] is False
 
 
+def test_mem_alloc_rejects_unknown_pid() -> None:
+    jvk_init(MEM_CFG)
+    jvk_command({"action": "create_process", "name": "p1"})
+    r = jvk_command({"action": "mem_alloc", "pid": 99, "pages": 1})
+    assert r["ok"] is False
+    assert "no such process" in r["error"]
+
+
 def test_memory_events_are_logged() -> None:
     jvk_init(MEM_CFG)
+    jvk_command({"action": "create_process", "name": "p1"})
     jvk_command({"action": "mem_alloc", "pid": 1, "pages": 1})
     jvk_command({"action": "mem_write", "pid": 1, "addr": 0, "value": 5})
     jvk_command({"action": "mem_free", "pid": 1})
@@ -380,6 +397,8 @@ def test_interrupt_priority_ordering() -> None:
 def test_page_fault_generates_interrupt() -> None:
     cfg = {"boot": True, "memory": {"totalPages": 4, "allocator": "first_fit", "replacement": "clock", "swapEnabled": True, "swapSlots": 8}}
     jvk_init(cfg)
+    for n in ["p1", "p2", "p3"]:
+        jvk_command({"action": "create_process", "name": n})
     jvk_command({"action": "mem_alloc", "pid": 1, "pages": 2})
     jvk_command({"action": "mem_alloc", "pid": 2, "pages": 2})
     jvk_command({"action": "mem_write", "pid": 1, "addr": 0, "value": 123})

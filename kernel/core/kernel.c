@@ -389,7 +389,21 @@ const char* jvk_command(const char* action_json)
         queues_to_json(result, "queues", &g_pm);
         cJSON_AddBoolToObject(result, "ok", 1);
     } else if (strncmp(action, "mem_", 4) == 0) {
-        if (!kmem_handle(&g_mm, action, req, result)) {
+        /* M4 fix: only an existing process may own memory — otherwise
+           the UI would create address spaces for ghost PIDs. */
+        if (strcmp(action, "mem_alloc") == 0) {
+            cJSON* pid_item = cJSON_GetObjectItemCaseSensitive(req, "pid");
+            int pid = cJSON_IsNumber(pid_item) ? (int)pid_item->valuedouble : -1;
+            if (pm_get(&g_pm, pid) == NULL) {
+                em_record(&g_em, JVK_ERR_PROCESS, "alloc for unknown pid", &g_ic);
+                cJSON_AddBoolToObject(result, "ok", 0);
+                cJSON_AddStringToObject(result, "error", "no such process");
+            } else if (!kmem_handle(&g_mm, action, req, result)) {
+                jvk_set_error("unknown action");
+                cJSON_AddBoolToObject(result, "ok", 0);
+                cJSON_AddStringToObject(result, "error", "unknown action");
+            }
+        } else if (!kmem_handle(&g_mm, action, req, result)) {
             jvk_set_error("unknown action");
             cJSON_AddBoolToObject(result, "ok", 0);
             cJSON_AddStringToObject(result, "error", "unknown action");
