@@ -41,19 +41,24 @@ Each agent (Finance, Coding, Research, and user-created ones) runs as a simulate
 VOS/
 ├── AGENTS.md                   AI development guidelines (rules we follow)
 ├── backend/                    FastAPI bridge (ctypes → kernel)
-│   ├── main.py                 lifecycle: boot kernel, serve REST/WS
+│   ├── main.py                 lifecycle: boot kernel, serve REST/WS (/health, /api/*, /ws)
 │   └── services/kernel_loader.py   ctypes bindings + jvk_* wrappers
 ├── config/                     boot, scheduler, memory, paging, theme, voice, clock JSON
-├── doc/                        ARCHITECTURE, IMPLEMENTATION_PLAN, PROJECT_SPEC, TEAM_OVERVIEW
+├── doc/                        ARCHITECTURE, IMPLEMENTATION_PLAN, PROJECT_SPEC, TEAM_OVERVIEW, FRONTEND_SPEC
 ├── kernel/                     THE C KERNEL (builds jarvis_kernel.dll)
-│   ├── core/                   kernel.c (dispatcher, JSON ABI)
+│   ├── core/                   kernel.c + kernel_memory.c (dispatch, ABI)
 │   ├── cpu/                    registers, ALU, clock, CPU simulator
 │   ├── asm/                    context_switch.S (NASM)
-│   ├── scheduler/              round-robin scheduler (stub → strategy pattern)
+│   ├── process/                PCB, PID gen, queues, lifecycle
+│   ├── scheduler/              RR/FCFS/SJF/Priority (strategy pattern)
+│   ├── memory/                 frames, page tables, MMU, alloc/replacement, swap
+│   ├── interrupts/             priority queue, ISRs, error manager, panic
 │   ├── deps/cJSON/             vendored JSON library
-│   └── tests/                  C smoke tests
-├── frontend/                   Electron + React scaffold
-├── tests/python/               pytest ABI + FastAPI tests
+│   └── tests/                  C smoke tests (cpu, process, memory, interrupts)
+├── frontend/                   Electron + Vite + React + Tailwind + Zustand + Framer Motion
+│   ├── electron/               main.js (spawns backend) + preload.js
+│   └── src/                    6 live windows + taskbar + desktop
+├── tests/python/               pytest ABI + FastAPI tests (40 tests)
 └── .toolchain/                 local junctions to gcc / nasm (never committed)
 ```
 
@@ -75,11 +80,11 @@ mingw32-make test     # runs the C smoke test
 
 ### 2. Run the bridge (FastAPI)
 ```bash
-python -m pytest tests -q        # ABI + API test suite
+python -m pytest tests -q        # 40 tests (ABI + API + interrupts + scheduler)
 uvicorn backend.main:app --port 8000   # boots the kernel via ctypes
 ```
 
-Endpoints: `GET /health`, `POST /api/command` (flat `{"action": ..., ...}` or legacy `{"action": ..., "data": {...}}`), `GET /api/tick`, `GET /api/logs`.
+Endpoints: `GET /health`, `GET /api/snapshot`, `POST /api/command` (flat `{"action": ..., ...}`), `GET /api/tick`, `GET /api/logs`, `WebSocket /ws` (live snapshot/logs, auto-tick every 2.5s).
 
 ### 3. Run the frontend (Electron + React)
 ```bash
@@ -105,8 +110,8 @@ Every launched agent is a real simulated process: PCB, PID, scheduling, virtual 
 | Phase | Milestones | Status |
 |---|---|---|
 | MVP | M0 Project Skeleton · M1 Toolchain & Kernel Build · M2 CPU & Clock | ✅ Completed |
-| MVP | M3a Process Manager | ▶ Next up |
-| MVP | M3b Memory Manager · M4 Interrupts & Errors · M5 Filesystem · M6 Devices · M7 IPC · M8 Shell · M9a Agent Core · M9b Consoles & Tools · M10b API · M11 Desktop | ○ Pending |
+| MVP | M3a Process Manager · M3b Memory Manager · M11a Frontend Foundation (Electron) · M4 Interrupts & Errors · M4.5 Scheduler Strategy (RR/FCFS/SJF/Priority) | ✅ Completed — 6 live windows, WS push, 40 pytest + 4 C smokes |
+| MVP | M5 Filesystem · M6 Devices · M7 IPC · M8 Shell · M9a Agent Core · M9b Consoles & Tools · M10b API · M11b Desktop | ▶ Next: M5 File System |
 | Post-MVP | M10a Voice · M12 AI & Gemini · M13 Testing/Packaging · M14 Docs/Release · M15 Future | ○ Pending |
 
 The MVP is the **clickable OS for AI agents**; voice and AI reasoning come after.

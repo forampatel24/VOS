@@ -1,8 +1,8 @@
 # JARVIS OS — Frontend Specification
 
-Version: 1.0
-Date: 2026-07-24
-Status: **Adopted** — canonical visual/UX target for all frontend milestones (M11a onward)
+Version: 1.1
+Date: 2026-08-29
+Status: **Adopted** — canonical visual/UX target for all frontend milestones (M11a onward) — *M11a + M4 + M4.5 live as of 2026-08-29*
 
 ---
 
@@ -85,13 +85,13 @@ Status legend: LIVE at mid-sem demo · PARTIAL at mid-sem · ARRIVES-WITH-MILEST
 | 5  | Create Agent                 | M9b    | Agent Studio → process creation (M9a) |
 | 6  | Agent Library                | M9b    | built-in + custom agents (M9a) |
 | 7  | Process Manager              | M11a   | **kernel done (M3a)** — PCBs, queues, lifecycle commands |
-| 8  | CPU & Scheduler              | M11a*  | clock/quantum/RR exist; usage + ready queue live; *algorithm switching waits for scheduler-strategy work* |
+| 8  | CPU & Scheduler              | **LIVE (M4.5)** | clock/quantum + RR/FCFS/SJF/Priority live, `RUNNING/NEXT` + switches |
 | 9  | Memory Manager               | M11a   | M3b (frames, page tables, faults) |
 | 10 | IPC & Synchronization        | M7     | msg queues, shared mem, pipes, mutex/sem |
 | 11 | File Explorer                | M5     | virtual filesystem |
 | 12 | I/O & Device Manager         | M6     | device manager + drivers |
 | 13 | Spooling & Buffer Monitor    | M6     | printer spooler, I/O buffers |
-| 14 | Interrupt Center             | M4     | interrupt controller (panel live same milestone) |
+| 14 | Interrupt Center             | **LIVE (M4)** | priority queue + panic + page-fault wiring, 6 IRQs + error manager |
 | 15 | Kernel Monitor               | M11a*  | starts as live event stream; enriches every milestone |
 | 16 | System Logs                  | M11a   | `jvk_logs` (exists since M1); search/filter matures M10b |
 | 17 | Terminal / JARVIS Shell      | M8     | shell parser through `jvk_command` |
@@ -100,8 +100,8 @@ Status legend: LIVE at mid-sem demo · PARTIAL at mid-sem · ARRIVES-WITH-MILEST
 | 20 | System Information           | post-M11a | trivial snapshot extensions |
 | 21 | Shutdown / Restart Screen    | M8/M11b | `shutdown` command + Electron close sequence |
 
-**Mid-sem review shows ~6 fully-live screens (1, 2, 7, 8-partial, 9, 16) with the rest present
-in the menu, greyed as "subsystem offline".**
+**Mid-sem review shows 7 fully-live screens (1, 2, 7, 8, 9, 14, 16) with the rest present
+in the menu, greyed as "subsystem offline" — as of 2026-08-29.**
 
 ---
 
