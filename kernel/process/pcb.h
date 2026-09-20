@@ -30,9 +30,10 @@ typedef struct {
     int              pid;              /* positive; 0 marks a free slot */
     char             name[JVK_PROC_NAME_LEN];
     jvk_proc_state_t state;
-    int              priority;         /* higher runs first (future) */
+    int              priority;         /* higher runs first */
+    int              burst_time;       /* user-provided BT, 0 = not set */
     cpu_regs_t       regs;             /* saved register/PC context */
-    unsigned long    created_ticks;
+    unsigned long    created_ticks;    /* AT */
     int              cpu_used;         /* instructions executed so far */
 } jvk_pcb_t;
 

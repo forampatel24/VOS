@@ -38,8 +38,8 @@ int main(void)
 
     /* ---- PID generation ---- */
     int pid_a = 0, pid_b = 0;
-    expect(pm_create(&pm, "alpha", 0, 0, &pid_a) == 1, "create alpha");
-    expect(pm_create(&pm, "beta", 0, 0, &pid_b) == 1, "create beta");
+    expect(pm_create(&pm, "alpha", 0, 0, 0, &pid_a) == 1, "create alpha");
+    expect(pm_create(&pm, "beta", 0, 0, 0, &pid_b) == 1, "create beta");
     expect(pid_a == 1 && pid_b == 2, "PIDs are monotonic from 1");
 
     /* ---- queues after create ---- */
@@ -90,14 +90,14 @@ int main(void)
     int ok = 1;
     for (int i = 0; i < JVK_MAX_PROCS; i++) {
         int pid = 0;
-        if (!pm_create(&full, "fill", 0, 0, &pid)) {
+        if (!pm_create(&full, "fill", 0, 0, 0, &pid)) {
             ok = 0;
             break;
         }
     }
     expect(ok == 1 && full.count == JVK_MAX_PROCS, "table fills to cap");
     int extra = 0;
-    expect(pm_create(&full, "overflow", 0, 0, &extra) == 0, "create rejected when full");
+    expect(pm_create(&full, "overflow", 0, 0, 0, &extra) == 0, "create rejected when full");
 
     if (g_failures == 0) {
         printf("PASS: process manager smoke test\n");

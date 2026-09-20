@@ -66,8 +66,21 @@ export default function CpuScheduler() {
 
       {/* scheduler */}
       <div className="rounded-lg border border-[#1e2a4a] bg-[#0d1225] p-3">
-        <div className="mono text-xs font-semibold tracking-widest text-emerald-300 mb-2">SCHEDULER — ROUND ROBIN</div>
+        <div className="mono text-xs font-semibold tracking-widest text-emerald-300 mb-2">
+          SCHEDULER — {snap.scheduler ? snap.scheduler.algo.toUpperCase() : "ROUND_ROBIN"}
+        </div>
         <div className="mono text-xs space-y-2">
+          <div className="flex gap-1">
+            {["round_robin", "fcfs", "sjf", "priority"].map((algo) => (
+              <button
+                key={algo}
+                onClick={() => command({ action: "scheduler_config", algo })}
+                className={`rounded px-2 py-1 text-[11px] tracking-wide border ${snap.scheduler?.algo === algo ? "bg-emerald-500/20 border-emerald-400/40 text-emerald-200" : "bg-[#141b34] border-[#1e2a4a] text-white/50 hover:text-white/80"}`}
+              >
+                {algo === "round_robin" ? "RR" : algo.toUpperCase()}
+              </button>
+            ))}
+          </div>
           <div className="flex justify-between text-white/60">
             <span>Quantum</span>
             <span className="text-white">{snap.clock.quantum} ticks</span>

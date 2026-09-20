@@ -432,6 +432,50 @@ def test_panic_flag() -> None:
     assert snap["interrupts"]["dropped"] >= 1
 
 
+# ---- M4.5 priority / SJF / FCFS -----------------------------------------
+
+def test_scheduler_priority_picks_highest() -> None:
+    jvk_init({"boot": True})
+    a = jvk_command({"action": "create_process", "name": "low", "priority": 1})
+    b = jvk_command({"action": "create_process", "name": "high", "priority": 10})
+    c = jvk_command({"action": "create_process", "name": "mid", "priority": 5})
+    jvk_command({"action": "scheduler_config", "algo": "priority"})
+    snap = jvk_snapshot()
+    assert snap["scheduler"]["algo"] == "priority"
+    assert snap["scheduler"]["next"] == b["pid"]  # highest prio
+    jvk_tick()
+    # Priority stays with high until it is killed/suspended
+    assert jvk_snapshot()["scheduler"]["current"] == b["pid"]
+    # FCFS picks earliest arrival (lowest created_ticks)
+    jvk_init({"boot": True})
+    jvk_command({"action": "create_process", "name": "first", "priority": 1})
+    jvk_tick()
+    jvk_command({"action": "create_process", "name": "second", "priority": 10})
+    jvk_command({"action": "scheduler_config", "algo": "fcfs"})
+    assert jvk_snapshot()["scheduler"]["next"] == 1  # first arrived
+
+
+def test_scheduler_sjf_picks_shortest_burst() -> None:
+    jvk_init({"boot": True})
+    a = jvk_command({"action": "create_process", "name": "long", "burst_time": 10})
+    b = jvk_command({"action": "create_process", "name": "short", "burst_time": 2})
+    jvk_command({"action": "scheduler_config", "algo": "sjf"})
+    assert jvk_snapshot()["scheduler"]["next"] == b["pid"]
+    # RR still works and stores burst
+    jvk_command({"action": "scheduler_config", "algo": "round_robin"})
+    snap = jvk_snapshot()
+    assert snap["scheduler"]["algo"] == "round_robin"
+    assert snap["process_list"][0]["burst_time"] == 10
+    assert snap["process_list"][1]["burst_time"] == 2
+
+
+def test_scheduler_config_rejects_unknown() -> None:
+    jvk_init({"boot": True})
+    bad = jvk_command({"action": "scheduler_config", "algo": "bogus"})
+    assert bad["ok"] is False
+    assert "unknown algo" in bad["error"]
+
+
 def test_fastapi_health_endpoint() -> None:
     with TestClient(app) as client:
         resp = client.get("/health")

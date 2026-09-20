@@ -5,6 +5,8 @@ export default function ProcessManager() {
   const snap = useKernelStore((s) => s.snapshot);
   const command = useKernelStore((s) => s.command);
   const [name, setName] = useState("agent_" + Math.floor(Math.random() * 900 + 100));
+  const [prio, setPrio] = useState("0");
+  const [burst, setBurst] = useState("5");
   const [busy, setBusy] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -12,7 +14,12 @@ export default function ProcessManager() {
 
   const doCreate = async () => {
     setError(null);
-    const res = (await command({ action: "create_process", name })) as { ok: boolean; error?: string };
+    const payload: Record<string, unknown> = { action: "create_process", name };
+    const p = parseInt(prio, 10);
+    const b = parseInt(burst, 10);
+    if (!isNaN(p)) payload.priority = p;
+    if (!isNaN(b) && b > 0) payload.burst_time = b;
+    const res = (await command(payload)) as { ok: boolean; error?: string };
     if (!res.ok) setError(res.error ?? "create failed");
   };
 
@@ -32,8 +39,16 @@ export default function ProcessManager() {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="process name"
-          className="mono h-7 rounded border border-[#1e2a4a] bg-[#060a14] px-2 text-xs text-white placeholder:text-white/30 focus:border-cyan-400/50 focus:outline-none"
+          className="mono h-7 w-28 rounded border border-[#1e2a4a] bg-[#060a14] px-2 text-xs text-white placeholder:text-white/30 focus:border-cyan-400/50 focus:outline-none"
         />
+        <label className="flex items-center gap-1 mono text-xs text-white/60">
+          PRIO
+          <input value={prio} onChange={(e) => setPrio(e.target.value)} className="w-12 h-7 rounded border border-[#1e2a4a] bg-[#060a14] px-1 text-xs text-white" />
+        </label>
+        <label className="flex items-center gap-1 mono text-xs text-white/60">
+          BT
+          <input value={burst} onChange={(e) => setBurst(e.target.value)} className="w-12 h-7 rounded border border-[#1e2a4a] bg-[#060a14] px-1 text-xs text-white" />
+        </label>
         <button onClick={doCreate} className="mono h-7 rounded bg-cyan-500 px-3 text-xs font-semibold tracking-widest text-black hover:bg-cyan-400 transition">
           CREATE
         </button>
@@ -52,14 +67,15 @@ export default function ProcessManager() {
               <th className="text-left font-normal tracking-widest p-2">NAME</th>
               <th className="text-left font-normal tracking-widest p-2">STATE</th>
               <th className="text-left font-normal tracking-widest p-2">PRIO</th>
-              <th className="text-left font-normal tracking-widest p-2">CREATED</th>
+              <th className="text-left font-normal tracking-widest p-2">BT</th>
+              <th className="text-left font-normal tracking-widest p-2">AT</th>
               <th className="text-right font-normal tracking-widest p-2">ACTIONS</th>
             </tr>
           </thead>
           <tbody>
             {snap.process_list.length === 0 ? (
               <tr>
-                <td colSpan={6} className="p-8 text-center text-white/30">
+                <td colSpan={7} className="p-8 text-center text-white/30">
                   No processes — create one to see the lifecycle (READY → SUSPENDED → TERMINATED)
                 </td>
               </tr>
@@ -84,6 +100,7 @@ export default function ProcessManager() {
                     </span>
                   </td>
                   <td className="p-2 text-white/70">{p.priority}</td>
+                  <td className="p-2 text-white/60">{p.burst_time || "—"}</td>
                   <td className="p-2 text-white/40">{p.created_ticks}</td>
                   <td className="p-2">
                     <div className="flex justify-end gap-1">

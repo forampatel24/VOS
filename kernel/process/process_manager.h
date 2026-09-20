@@ -37,7 +37,8 @@ typedef struct {
 
 void        pm_init(jvk_process_manager_t* pm);
 int         pm_create(jvk_process_manager_t* pm, const char* name,
-                      int priority, unsigned long ticks, int* out_pid);
+                      int priority, int burst_time,
+                      unsigned long ticks, int* out_pid);
 int         pm_kill(jvk_process_manager_t* pm, int pid);
 int         pm_suspend(jvk_process_manager_t* pm, int pid);
 int         pm_resume(jvk_process_manager_t* pm, int pid);

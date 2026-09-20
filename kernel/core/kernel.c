@@ -168,6 +168,7 @@ static void process_list_to_json(cJSON* arr, const jvk_process_manager_t* pm)
         cJSON_AddStringToObject(item, "name", p->name);
         cJSON_AddStringToObject(item, "state", pm_state_name(p->state));
         cJSON_AddNumberToObject(item, "priority", p->priority);
+        cJSON_AddNumberToObject(item, "burst_time", p->burst_time);
         cJSON_AddNumberToObject(item, "created_ticks", (double)p->created_ticks);
         cJSON_AddNumberToObject(item, "cpu_used", p->cpu_used);
         cJSON_AddItemToArray(arr, item);
@@ -180,6 +181,7 @@ const char* jvk_init(const char* config_json)
 {
     int speed_hz = 1000;
     int quantum  = 10;
+    char sched_algo_buf[32] = "";
     cJSON* root  = NULL;
 
     if (config_json != NULL && config_json[0] != '\0') {
@@ -198,6 +200,14 @@ const char* jvk_init(const char* config_json)
                 quantum = (int)q->valuedouble;
             }
         }
+        cJSON* sched = cJSON_GetObjectItemCaseSensitive(root, "scheduler");
+        if (cJSON_IsObject(sched)) {
+            cJSON* a = cJSON_GetObjectItemCaseSensitive(sched, "algorithm");
+            if (!cJSON_IsString(a)) a = cJSON_GetObjectItemCaseSensitive(sched, "algo");
+            if (cJSON_IsString(a)) {
+                snprintf(sched_algo_buf, sizeof(sched_algo_buf), "%s", a->valuestring);
+            }
+        }
     }
 
     g_booted    = 1;
@@ -211,6 +221,9 @@ const char* jvk_init(const char* config_json)
     cpu_init(&g_cpu);
     clock_init(&g_clock, speed_hz, quantum);
     scheduler_init(&g_sched);
+    if (sched_algo_buf[0] != '\0') {
+        scheduler_set_algo(&g_sched, sched_algo_buf);
+    }
     pm_init(&g_pm);
     if (!kmem_boot(&g_mm, root)) {
         cJSON_Delete(root);
@@ -320,13 +333,17 @@ const char* jvk_command(const char* action_json)
     } else if (strcmp(action, "create_process") == 0) {
         cJSON* name_item = cJSON_GetObjectItemCaseSensitive(req, "name");
         cJSON* prio_item = cJSON_GetObjectItemCaseSensitive(req, "priority");
+        cJSON* burst_item = cJSON_GetObjectItemCaseSensitive(req, "burst_time");
+        if (!cJSON_IsNumber(burst_item)) burst_item = cJSON_GetObjectItemCaseSensitive(req, "burst");
+        if (!cJSON_IsNumber(burst_item)) burst_item = cJSON_GetObjectItemCaseSensitive(req, "bt");
         const char* name = cJSON_IsString(name_item) ? name_item->valuestring
-                                                     : "process";
-        int priority = cJSON_IsNumber(prio_item) ? (int)prio_item->valuedouble
-                                                 : 0;
+                                                      : "process";
+        int priority = cJSON_IsNumber(prio_item) ? (int)prio_item->valuedouble : 0;
+        int burst    = cJSON_IsNumber(burst_item) ? (int)burst_item->valuedouble : 0;
+        if (burst < 0) burst = 0;
         int pid = 0;
-        if (pm_create(&g_pm, name, priority, g_ticks, &pid)) {
-            scheduler_register(&g_sched, pid, name);
+        if (pm_create(&g_pm, name, priority, burst, g_ticks, &pid)) {
+            scheduler_register_ex(&g_sched, pid, name, priority, burst, g_ticks);
             char msg[JVK_LOG_LEN];
             snprintf(msg, sizeof(msg), "PROCESS_CREATED pid=%d name=%s", pid, name);
             jvk_log(msg);
@@ -449,6 +466,26 @@ const char* jvk_command(const char* action_json)
     } else if (strcmp(action, "clear_panic") == 0) {
         ic_clear_panic(&g_ic);
         cJSON_AddBoolToObject(result, "ok", 1);
+    } else if (strcmp(action, "scheduler_config") == 0) {
+        cJSON* algo_item = cJSON_GetObjectItemCaseSensitive(req, "algo");
+        if (!cJSON_IsString(algo_item)) algo_item = cJSON_GetObjectItemCaseSensitive(req, "algorithm");
+        const char* algo = cJSON_IsString(algo_item) ? algo_item->valuestring : NULL;
+        if (!scheduler_set_algo(&g_sched, algo)) {
+            em_record(&g_em, JVK_ERR_CPU, "unknown scheduler algo", &g_ic);
+            cJSON_AddBoolToObject(result, "ok", 0);
+            cJSON_AddStringToObject(result, "error", "unknown algo (rr/fcfs/sjf/priority)");
+        } else {
+            char lmsg[JVK_LOG_LEN];
+            snprintf(lmsg, sizeof(lmsg), "SCHEDULER_ALGO %s", scheduler_algo_name(g_sched.algo));
+            jvk_log(lmsg);
+            cJSON_AddBoolToObject(result, "ok", 1);
+            cJSON_AddStringToObject(result, "algo", scheduler_algo_name(g_sched.algo));
+        }
+    } else if (strcmp(action, "list_scheduler") == 0) {
+        cJSON_AddStringToObject(result, "algo", scheduler_algo_name(g_sched.algo));
+        cJSON_AddNumberToObject(result, "switches", g_sched.switches);
+        cJSON_AddNumberToObject(result, "current", g_current_pid);
+        cJSON_AddBoolToObject(result, "ok", 1);
     } else {
         em_record(&g_em, JVK_ERR_CPU, "unknown action", &g_ic);
         jvk_set_error("unknown action");
@@ -513,12 +550,13 @@ void jvk_tick(void)
         if (pid >= 0) {
             g_current_pid = pid;
             char msg[JVK_LOG_LEN];
-            snprintf(msg, sizeof(msg), "SCHEDULE pid=%d", pid);
+            snprintf(msg, sizeof(msg), "SCHEDULE pid=%d algo=%s", pid, scheduler_algo_name(g_sched.algo));
             jvk_log(msg);
-            /* Keep PM's ready queue visibly rotating for the UI — the
-               scheduler has its own cursor but the snapshot exposes PM's
-               queue, so rotate it in lockstep for liveness. */
-            pm_next_ready(&g_pm);
+            /* Keep PM's ready queue visibly rotating only for RR — other
+               algos pick by priority/burst, not rotation. */
+            if (g_sched.algo == SCHED_RR) {
+                pm_next_ready(&g_pm);
+            }
         }
     }
 
@@ -542,15 +580,22 @@ const char* jvk_snapshot(void)
     em_snapshot(&g_em, root);
 
     cJSON* sched = cJSON_CreateObject();
+    cJSON_AddStringToObject(sched, "algo", scheduler_algo_name(g_sched.algo));
     cJSON_AddNumberToObject(sched, "switches", g_sched.switches);
     cJSON_AddNumberToObject(sched, "current", g_current_pid);
     int next_pid = -1;
-    for (int i = 0; i < g_sched.count; i++) {
-        int idx = (g_sched.next + i) % g_sched.count;
-        if (g_sched.ready[idx]) {
-            next_pid = g_sched.pids[idx];
-            break;
+    if (g_sched.algo == SCHED_RR) {
+        for (int i = 0; i < g_sched.count; i++) {
+            int idx = (g_sched.next + i) % g_sched.count;
+            if (g_sched.ready[idx]) {
+                next_pid = g_sched.pids[idx];
+                break;
+            }
         }
+    } else {
+        /* For priority/sjf/fcfs, ask the scheduler who it would pick */
+        jvk_scheduler_t copy = g_sched;
+        next_pid = scheduler_schedule(&copy);
     }
     cJSON_AddNumberToObject(sched, "next", next_pid);
     cJSON_AddItemToObject(root, "scheduler", sched);

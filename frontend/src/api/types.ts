@@ -22,6 +22,7 @@ export interface ProcessEntry {
   name: string;
   state: string; // READY | RUNNING | WAITING | SUSPENDED | TERMINATED
   priority: number;
+  burst_time: number;
   created_ticks: number;
   cpu_used: number;
 }
@@ -101,6 +102,7 @@ export interface ErrorManagerSnapshot {
 }
 
 export interface SchedulerSnapshot {
+  algo: string;
   current: number;
   next: number;
   switches: number;

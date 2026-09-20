@@ -47,7 +47,8 @@ void pm_init(jvk_process_manager_t* pm)
 }
 
 int pm_create(jvk_process_manager_t* pm, const char* name,
-              int priority, unsigned long ticks, int* out_pid)
+              int priority, int burst_time,
+              unsigned long ticks, int* out_pid)
 {
     int slot = find_free_slot(pm);
     if (slot < 0) {
@@ -64,6 +65,7 @@ int pm_create(jvk_process_manager_t* pm, const char* name,
     snprintf(p->name, sizeof(p->name), "%s", name);
     p->state = PROC_STATE_READY;
     p->priority = priority;
+    p->burst_time = burst_time;
     p->created_ticks = ticks;
 
     queue_push(&pm->ready, pid);
