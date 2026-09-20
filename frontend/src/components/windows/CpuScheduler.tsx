@@ -72,28 +72,42 @@ export default function CpuScheduler() {
             <span>Quantum</span>
             <span className="text-white">{snap.clock.quantum} ticks</span>
           </div>
+          {snap.scheduler && (
+            <div className="flex gap-2">
+              <div className={`flex-1 rounded border px-2 py-1.5 text-center ${snap.scheduler.current === -1 ? "bg-[#141b34] border-[#1e2a4a] text-white/30" : "bg-emerald-500/15 border-emerald-400/30 text-emerald-300"}`}>
+                <div className="text-[10px] tracking-widest opacity-60">RUNNING</div>
+                <div className="font-bold">{snap.scheduler.current === -1 ? "— idle" : `PID ${snap.scheduler.current}`}</div>
+              </div>
+              <div className="flex-1 rounded bg-[#141b34] border border-[#1e2a4a] px-2 py-1.5 text-center">
+                <div className="text-white/40 text-[10px] tracking-widest">NEXT</div>
+                <div className="text-white font-bold">{snap.scheduler.next === -1 ? "—" : `PID ${snap.scheduler.next}`}</div>
+              </div>
+            </div>
+          )}
           <div>
-            <div className="text-white/40 text-[10px] tracking-widest mb-1">READY QUEUE — drives next SCHEDULE</div>
+            <div className="text-white/40 text-[10px] tracking-widest mb-1">READY QUEUE</div>
             <div className="flex flex-wrap gap-1">
               {snap.queues.ready.length === 0 ? (
                 <span className="text-white/20">empty — no runnable process</span>
               ) : (
                 snap.queues.ready.map((pid) => {
                   const isNext = snap.scheduler && snap.scheduler.next === pid;
+                  const isRunning = snap.scheduler && snap.scheduler.current === pid;
                   return (
                     <span
                       key={pid}
-                      className={`rounded px-2 py-1 border text-xs ${isNext ? "bg-emerald-500/20 border-emerald-400/40 text-emerald-200" : "bg-[#141b34] border-[#1e2a4a] text-white/60"}`}
+                      className={`rounded px-2 py-1 border text-xs ${isRunning ? "bg-cyan-500/20 border-cyan-400/40 text-cyan-200" : isNext ? "bg-emerald-500/20 border-emerald-400/40 text-emerald-200" : "bg-[#141b34] border-[#1e2a4a] text-white/60"}`}
                     >
                       {pid}
-                      {isNext && " ← next"}
+                      {isRunning && " ● running"}
+                      {isNext && !isRunning && " ← next"}
                     </span>
                   );
                 })
               )}
             </div>
             {snap.scheduler && (
-              <div className="text-white/30 text-[10px]">switches {snap.scheduler.switches} · next {snap.scheduler.next === -1 ? "—" : snap.scheduler.next}</div>
+              <div className="text-white/30 text-[10px]">switches {snap.scheduler.switches}</div>
             )}
           </div>
           <div className="mono text-[10px] text-white/30">

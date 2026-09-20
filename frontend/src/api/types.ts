@@ -101,6 +101,7 @@ export interface ErrorManagerSnapshot {
 }
 
 export interface SchedulerSnapshot {
+  current: number;
   next: number;
   switches: number;
 }

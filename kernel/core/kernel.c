@@ -66,6 +66,7 @@ static jvk_memory_manager_t  g_mm;
 static jvk_ic_t              g_ic;
 static jvk_isr_registry_t    g_isr;
 static jvk_error_manager_t   g_em;
+static int           g_current_pid = -1;
 static int           g_cpu_halt_logged = 0;
 
 /* ---- logging --------------------------------------------------------- */
@@ -204,6 +205,7 @@ const char* jvk_init(const char* config_json)
     g_shutdown  = 0;
     g_log_count = 0;
     g_last_error[0] = '\0';
+    g_current_pid = -1;
     g_cpu_halt_logged = 0;
 
     cpu_init(&g_cpu);
@@ -471,29 +473,39 @@ void jvk_tick(void)
         }
     }
 
-    /* Service one pending interrupt per tick — priority order, one ISR at a time */
-    if (ic_pending(&g_ic) > 0) {
+    /* Drain all pending interrupts in priority order before scheduling —
+       process does not advance until queue is empty. */
+    while (ic_pending(&g_ic) > 0) {
         jvk_irq_entry_t irq;
-        if (ic_dequeue_next(&g_ic, &irq)) {
-            char imsg[JVK_LOG_LEN];
-            snprintf(imsg, sizeof(imsg), "IRQ_HANDLED irq=%s source=%s", jvk_irq_name(irq.irq), irq.source);
-            jvk_log(imsg);
-            isr_handle(&g_isr, &g_ic, &irq);
-            if (g_ic.panic) {
-                em_record(&g_em, JVK_ERR_SYSTEM, g_ic.panic_reason, &g_ic);
-            }
+        if (!ic_dequeue_next(&g_ic, &irq)) {
+            break;
+        }
+        char imsg[JVK_LOG_LEN];
+        snprintf(imsg, sizeof(imsg), "IRQ_HANDLED irq=%s source=%s", jvk_irq_name(irq.irq), irq.source);
+        jvk_log(imsg);
+        isr_handle(&g_isr, &g_ic, &irq);
+        if (g_ic.panic) {
+            em_record(&g_em, JVK_ERR_SYSTEM, g_ic.panic_reason, &g_ic);
+            break; /* panic freezes the rest until CLEAR */
         }
     }
 
-    int pid = scheduler_schedule(&g_sched);
-    if (pid >= 0) {
-        char msg[JVK_LOG_LEN];
-        snprintf(msg, sizeof(msg), "SCHEDULE pid=%d", pid);
-        jvk_log(msg);
-        /* Keep PM's ready queue visibly rotating for the UI — the
-           scheduler has its own cursor but the snapshot exposes PM's
-           queue, so rotate it in lockstep for liveness. */
-        pm_next_ready(&g_pm);
+    if (g_ic.panic) {
+        /* Shutdown panic freezes scheduling for visuals — ready queue
+           stays stuck and no SCHEDULE logs until CLEAR. */
+        jvk_log("SCHEDULER_PAUSED panic active");
+    } else {
+        int pid = scheduler_schedule(&g_sched);
+        if (pid >= 0) {
+            g_current_pid = pid;
+            char msg[JVK_LOG_LEN];
+            snprintf(msg, sizeof(msg), "SCHEDULE pid=%d", pid);
+            jvk_log(msg);
+            /* Keep PM's ready queue visibly rotating for the UI — the
+               scheduler has its own cursor but the snapshot exposes PM's
+               queue, so rotate it in lockstep for liveness. */
+            pm_next_ready(&g_pm);
+        }
     }
 
     if (g_ticks % 10 == 0) {
@@ -517,6 +529,7 @@ const char* jvk_snapshot(void)
 
     cJSON* sched = cJSON_CreateObject();
     cJSON_AddNumberToObject(sched, "switches", g_sched.switches);
+    cJSON_AddNumberToObject(sched, "current", g_current_pid);
     int next_pid = -1;
     for (int i = 0; i < g_sched.count; i++) {
         int idx = (g_sched.next + i) % g_sched.count;

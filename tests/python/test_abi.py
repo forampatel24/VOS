@@ -358,14 +358,17 @@ def test_trigger_interrupt_enqueues() -> None:
 
 def test_interrupt_priority_ordering() -> None:
     jvk_init({"boot": True})
-    # Enqueue low prio first, then high — high must be serviced first on next tick
+    # Enqueue low prio first, then high — high must be queued ahead (priority order)
     jvk_command({"action": "trigger_interrupt", "irq": "software", "source": "low"})
     jvk_command({"action": "trigger_interrupt", "irq": "page_fault", "source": "high"})
-    # Before tick, both pending; after one tick, high prio handled, low remains
-    before = jvk_snapshot()["interrupts"]["handled"]
+    snap = jvk_snapshot()
+    assert snap["interrupts"]["queue"][0]["irq"] == "page_fault"  # priority 1 beats 5
+    # Strict drain: one tick handles *all* pending, then scheduler runs
+    before = snap["interrupts"]["handled"]
     jvk_tick()
     after = jvk_snapshot()["interrupts"]["handled"]
-    assert after == before + 1
+    assert after == before + 2
+    assert jvk_snapshot()["interrupts"]["pending"] == 0
     logs = " | ".join(e["message"] for e in jvk_logs(0)["logs"])
     assert "IRQ_ENQUEUED" in logs
     assert "IRQ_HANDLED" in logs
