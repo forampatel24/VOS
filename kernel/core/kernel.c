@@ -490,6 +490,10 @@ void jvk_tick(void)
         char msg[JVK_LOG_LEN];
         snprintf(msg, sizeof(msg), "SCHEDULE pid=%d", pid);
         jvk_log(msg);
+        /* Keep PM's ready queue visibly rotating for the UI — the
+           scheduler has its own cursor but the snapshot exposes PM's
+           queue, so rotate it in lockstep for liveness. */
+        pm_next_ready(&g_pm);
     }
 
     if (g_ticks % 10 == 0) {
@@ -510,6 +514,19 @@ const char* jvk_snapshot(void)
     kmem_snapshot(&g_mm, root);
     ic_snapshot(&g_ic, root);
     em_snapshot(&g_em, root);
+
+    cJSON* sched = cJSON_CreateObject();
+    cJSON_AddNumberToObject(sched, "switches", g_sched.switches);
+    int next_pid = -1;
+    for (int i = 0; i < g_sched.count; i++) {
+        int idx = (g_sched.next + i) % g_sched.count;
+        if (g_sched.ready[idx]) {
+            next_pid = g_sched.pids[idx];
+            break;
+        }
+    }
+    cJSON_AddNumberToObject(sched, "next", next_pid);
+    cJSON_AddItemToObject(root, "scheduler", sched);
 
     cJSON* proc_list = cJSON_CreateArray();
     process_list_to_json(proc_list, &g_pm);

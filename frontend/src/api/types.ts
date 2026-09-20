@@ -100,6 +100,11 @@ export interface ErrorManagerSnapshot {
   counts: Record<string, number>;
 }
 
+export interface SchedulerSnapshot {
+  next: number;
+  switches: number;
+}
+
 export interface KernelSnapshot {
   booted: boolean;
   shutdown: boolean;
@@ -108,6 +113,7 @@ export interface KernelSnapshot {
   memory: MemorySnapshot;
   interrupts: InterruptSnapshot;
   error_manager: ErrorManagerSnapshot;
+  scheduler: SchedulerSnapshot;
   process_list: ProcessEntry[];
   queues: Queues;
   cpu: CpuSnapshot;

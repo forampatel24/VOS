@@ -78,17 +78,23 @@ export default function CpuScheduler() {
               {snap.queues.ready.length === 0 ? (
                 <span className="text-white/20">empty — no runnable process</span>
               ) : (
-                snap.queues.ready.map((pid, idx) => (
-                  <span
-                    key={pid}
-                    className={`rounded px-2 py-1 border text-xs ${idx === 0 ? "bg-emerald-500/20 border-emerald-400/40 text-emerald-200" : "bg-[#141b34] border-[#1e2a4a] text-white/60"}`}
-                  >
-                    {pid}
-                    {idx === 0 && " ← next"}
-                  </span>
-                ))
+                snap.queues.ready.map((pid) => {
+                  const isNext = snap.scheduler && snap.scheduler.next === pid;
+                  return (
+                    <span
+                      key={pid}
+                      className={`rounded px-2 py-1 border text-xs ${isNext ? "bg-emerald-500/20 border-emerald-400/40 text-emerald-200" : "bg-[#141b34] border-[#1e2a4a] text-white/60"}`}
+                    >
+                      {pid}
+                      {isNext && " ← next"}
+                    </span>
+                  );
+                })
               )}
             </div>
+            {snap.scheduler && (
+              <div className="text-white/30 text-[10px]">switches {snap.scheduler.switches} · next {snap.scheduler.next === -1 ? "—" : snap.scheduler.next}</div>
+            )}
           </div>
           <div className="mono text-[10px] text-white/30">
             Scheduling is real round-robin over the ready queue; algorithm switching arrives with the scheduler-strategy milestone.
