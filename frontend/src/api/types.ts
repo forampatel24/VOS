@@ -76,12 +76,38 @@ export interface MemorySnapshot {
   page_tables: PageTable[];
 }
 
+export interface InterruptEntry {
+  irq: string;
+  priority: number;
+  source: string;
+  detail: string;
+  enqueued_ticks: number;
+  status: string;
+}
+
+export interface InterruptSnapshot {
+  pending: number;
+  handled: number;
+  dropped: number;
+  panic: boolean;
+  panic_reason: string;
+  queue: InterruptEntry[];
+}
+
+export interface ErrorManagerSnapshot {
+  last_category: string;
+  last_message: string;
+  counts: Record<string, number>;
+}
+
 export interface KernelSnapshot {
   booted: boolean;
   shutdown: boolean;
   uptime_ticks: number;
   processes: number;
   memory: MemorySnapshot;
+  interrupts: InterruptSnapshot;
+  error_manager: ErrorManagerSnapshot;
   process_list: ProcessEntry[];
   queues: Queues;
   cpu: CpuSnapshot;

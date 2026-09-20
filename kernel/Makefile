@@ -21,13 +21,14 @@ LDFLAGS ?= -static-libgcc
 
 TARGET   = jarvis_kernel.dll
 IMPLIB   = libjarvis_kernel.a
-TESTBINS = test_cpu.exe test_process.exe test_memory.exe
+TESTBINS = test_cpu.exe test_process.exe test_memory.exe test_interrupts.exe
 
 SRCDIR   = core
 CPUDIR   = cpu
 SCHEDDIR = scheduler
 PROCDIR  = process
 MEMDIR   = memory
+INTDIR   = interrupts
 ASMDIR   = asm
 DEPSDIR  = deps/cJSON
 
@@ -39,6 +40,7 @@ SRCS = $(SRCDIR)/kernel.c $(SRCDIR)/kernel_memory.c \
        $(MEMDIR)/alloc_strategy.c $(MEMDIR)/frame_table.c \
        $(MEMDIR)/memory_manager.c $(MEMDIR)/mm_types.c \
        $(MEMDIR)/page_table.c $(MEMDIR)/replace_policy.c $(MEMDIR)/swap.c \
+       $(INTDIR)/ic.c $(INTDIR)/isr.c $(INTDIR)/error_manager.c \
        $(DEPSDIR)/cJSON.c
 
 ASM_SRC = $(ASMDIR)/context_switch.S
@@ -62,10 +64,11 @@ $(DEPSDIR)/cJSON.o: $(DEPSDIR)/cJSON.c
 $(ASM_OBJ): $(ASM_SRC)
 	$(NASM) -f win64 -o $@ $<
 
-test: $(TARGET) test_cpu.exe test_process.exe test_memory.exe
+test: $(TARGET) test_cpu.exe test_process.exe test_memory.exe test_interrupts.exe
 	./test_cpu.exe
 	./test_process.exe
 	./test_memory.exe
+	./test_interrupts.exe
 
 test_cpu.exe: tests/test_cpu.c $(OBJS)
 	$(CC) $(CFLAGS) -I. tests/test_cpu.c $(OBJS) $(LDFLAGS) -o $@
@@ -75,6 +78,9 @@ test_process.exe: tests/test_process.c $(OBJS)
 
 test_memory.exe: tests/test_memory.c $(OBJS)
 	$(CC) $(CFLAGS) -I. tests/test_memory.c $(OBJS) $(LDFLAGS) -o $@
+
+test_interrupts.exe: tests/test_interrupts.c $(OBJS)
+	$(CC) $(CFLAGS) -I. tests/test_interrupts.c $(OBJS) $(LDFLAGS) -o $@
 
 clean:
 	rm -f $(OBJS) $(TARGET) $(IMPLIB) $(TESTBINS)

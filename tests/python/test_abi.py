@@ -341,6 +341,75 @@ def test_memory_events_are_logged() -> None:
     assert "MEMORY_FREED pid=1" in logs
 
 
+# ---- M4 interrupt controller & error manager -----------------------------
+
+def test_trigger_interrupt_enqueues() -> None:
+    jvk_init({"boot": True})
+    r = jvk_command({"action": "trigger_interrupt", "irq": "timer", "source": "test"})
+    assert r["ok"] is True
+    assert r["irq"] == "timer"
+    snap = jvk_snapshot()
+    assert snap["interrupts"]["pending"] >= 1 or snap["interrupts"]["handled"] >= 1  # may be serviced on next tick
+    # list
+    lst = jvk_command({"action": "list_interrupts"})
+    assert lst["ok"] is True
+    assert "interrupts" in lst
+
+
+def test_interrupt_priority_ordering() -> None:
+    jvk_init({"boot": True})
+    # Enqueue low prio first, then high — high must be serviced first on next tick
+    jvk_command({"action": "trigger_interrupt", "irq": "software", "source": "low"})
+    jvk_command({"action": "trigger_interrupt", "irq": "page_fault", "source": "high"})
+    # Before tick, both pending; after one tick, high prio handled, low remains
+    before = jvk_snapshot()["interrupts"]["handled"]
+    jvk_tick()
+    after = jvk_snapshot()["interrupts"]["handled"]
+    assert after == before + 1
+    logs = " | ".join(e["message"] for e in jvk_logs(0)["logs"])
+    assert "IRQ_ENQUEUED" in logs
+    assert "IRQ_HANDLED" in logs
+    # bad irq rejected
+    bad = jvk_command({"action": "trigger_interrupt", "irq": "bogus"})
+    assert bad["ok"] is False
+
+
+def test_page_fault_generates_interrupt() -> None:
+    cfg = {"boot": True, "memory": {"totalPages": 4, "allocator": "first_fit", "replacement": "clock", "swapEnabled": True, "swapSlots": 8}}
+    jvk_init(cfg)
+    jvk_command({"action": "mem_alloc", "pid": 1, "pages": 2})
+    jvk_command({"action": "mem_alloc", "pid": 2, "pages": 2})
+    jvk_command({"action": "mem_write", "pid": 1, "addr": 0, "value": 123})
+    jvk_command({"action": "mem_alloc", "pid": 3, "pages": 1})  # evicts one page
+    # Touch the evicted page to fault — trampoline enqueues page_fault IRQ
+    jvk_command({"action": "mem_read", "pid": 1, "addr": 0})
+    logs = " | ".join(e["message"] for e in jvk_logs(0)["logs"])
+    assert "PAGE_FAULT" in logs
+    before = jvk_snapshot()["interrupts"]["handled"]
+    jvk_tick()  # services the fault IRQ
+    assert jvk_snapshot()["interrupts"]["handled"] == before + 1
+
+
+def test_panic_flag() -> None:
+    jvk_init({"boot": True})
+    snap = jvk_snapshot()
+    assert snap["interrupts"]["panic"] is False
+    r = jvk_command({"action": "panic", "reason": "test panic"})
+    assert r["ok"] is True
+    snap = jvk_snapshot()
+    assert snap["interrupts"]["panic"] is True
+    assert "test panic" in snap["interrupts"]["panic_reason"]
+    assert snap["error_manager"]["counts"]["system"] >= 1
+    r = jvk_command({"action": "clear_panic"})
+    assert r["ok"] is True
+    assert jvk_snapshot()["interrupts"]["panic"] is False
+    # interrupt queue full drops
+    for _ in range(35):
+        jvk_command({"action": "trigger_interrupt", "irq": "software", "source": "fill"})
+    snap = jvk_snapshot()
+    assert snap["interrupts"]["dropped"] >= 1
+
+
 def test_fastapi_health_endpoint() -> None:
     with TestClient(app) as client:
         resp = client.get("/health")

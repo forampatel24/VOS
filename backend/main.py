@@ -123,8 +123,9 @@ async def ws_endpoint(ws: WebSocket):
 
             # Gentle background tick so the desktop looks alive (clock, scheduler)
             # Only when clients are connected — keeps demo lively without polling REST
+            # 2.0s + 0.5s wait = ~2.5s per update so interrupts stay visible for demo
             jvk_tick()
-            await asyncio.sleep(0.4)
+            await asyncio.sleep(2.0)
     except WebSocketDisconnect:
         pass
     except Exception:

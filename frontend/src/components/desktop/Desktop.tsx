@@ -6,6 +6,7 @@ import ProcessManager from "@/components/windows/ProcessManager";
 import MemoryViewer from "@/components/windows/MemoryViewer";
 import CpuScheduler from "@/components/windows/CpuScheduler";
 import EventLog from "@/components/windows/EventLog";
+import InterruptCenter from "@/components/windows/InterruptCenter";
 import Placeholder from "@/components/windows/Placeholder";
 
 export default function Desktop() {
@@ -25,6 +26,7 @@ export default function Desktop() {
           { id: "memory", label: "Memory", icon: "⬢" },
           { id: "cpu", label: "CPU", icon: "⬣" },
           { id: "eventlog", label: "Event Log", icon: "≡" },
+          { id: "interrupts", label: "Interrupts", icon: "⚡" },
         ].map((item) => (
           <button
             key={item.id}
@@ -79,7 +81,7 @@ export default function Desktop() {
         )}
         {windows.interrupts.open && !windows.interrupts.minimized && (
           <Window id="interrupts" title="Interrupt Center" onClose={() => close("interrupts")}>
-            <Placeholder title="Interrupt Center" milestone="M4 — Interrupt Controller" />
+            <InterruptCenter />
           </Window>
         )}
         {windows.terminal.open && !windows.terminal.minimized && (

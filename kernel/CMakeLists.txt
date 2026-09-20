@@ -29,6 +29,9 @@ add_library(jarvis_kernel SHARED
     memory/page_table.c
     memory/replace_policy.c
     memory/swap.c
+    interrupts/ic.c
+    interrupts/isr.c
+    interrupts/error_manager.c
     deps/cJSON/cJSON.c
     asm/context_switch.S
 )

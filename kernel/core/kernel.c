@@ -32,6 +32,9 @@
 #include "cpu/cpu.h"
 #include "cpu/registers.h"
 #include "deps/cJSON/cJSON.h"
+#include "interrupts/error_manager.h"
+#include "interrupts/ic.h"
+#include "interrupts/isr.h"
 #include "kernel_memory.h"
 #include "memory/memory_manager.h"
 #include "process/process_manager.h"
@@ -60,6 +63,9 @@ static jvk_clock_t   g_clock;
 static jvk_scheduler_t g_sched;
 static jvk_process_manager_t g_pm;
 static jvk_memory_manager_t  g_mm;
+static jvk_ic_t              g_ic;
+static jvk_isr_registry_t    g_isr;
+static jvk_error_manager_t   g_em;
 static int           g_cpu_halt_logged = 0;
 
 /* ---- logging --------------------------------------------------------- */
@@ -73,11 +79,20 @@ static void jvk_log(const char* msg)
     g_log_count++;
 }
 
-/* Memory-subsystem events land in the central kernel log. */
+/* Memory-subsystem events land in the central kernel log.
+   Page faults also enqueue a page-fault interrupt so the IC can show them. */
 static void mem_event_trampoline(void* user, const char* message)
 {
     (void)user;
     jvk_log(message);
+    if (strncmp(message, "PAGE_FAULT", 10) == 0) {
+        const char* detail = message[10] == ' ' ? message + 11 : message;
+        ic_enqueue(&g_ic, JVK_IRQ_PAGE_FAULT, "memory", detail, g_ticks);
+    } else if (strncmp(message, "SEGV", 4) == 0) {
+        em_record(&g_em, JVK_ERR_MEMORY, message, &g_ic);
+    } else if (strncmp(message, "FRAME_RECLAIM", 13) == 0) {
+        /* reclaim already logged; no extra interrupt */
+    }
 }
 
 static void jvk_set_error(const char* msg)
@@ -200,6 +215,10 @@ const char* jvk_init(const char* config_json)
         return fail("memory manager init failed");
     }
     mm_set_observer(&g_mm, mem_event_trampoline, NULL);
+    ic_init(&g_ic);
+    isr_init(&g_isr);
+    isr_register_defaults(&g_isr);
+    em_init(&g_em);
     cJSON_Delete(root);
 
     jvk_log("kernel booted");
@@ -212,6 +231,7 @@ const char* jvk_init(const char* config_json)
     }
     jvk_log("process_manager: ready");
     jvk_log("memory_manager: ready");
+    jvk_log("interrupt_controller: ready");
     snprintf(msg, sizeof(msg),
              "memory: frames=%d allocator=%s replacement=%s swap=%s",
              g_mm.cfg.total_frames, mm_alloc_name(g_mm.cfg.allocator),
@@ -372,7 +392,49 @@ const char* jvk_command(const char* action_json)
             cJSON_AddBoolToObject(result, "ok", 0);
             cJSON_AddStringToObject(result, "error", "unknown action");
         }
+    } else if (strcmp(action, "trigger_interrupt") == 0) {
+        cJSON* irq_item = cJSON_GetObjectItemCaseSensitive(req, "irq");
+        const char* irq_str = cJSON_IsString(irq_item) ? irq_item->valuestring : NULL;
+        jvk_irq_t irq;
+        if (!jvk_irq_parse(irq_str, &irq)) {
+            em_record(&g_em, JVK_ERR_CPU, "unknown irq", &g_ic);
+            cJSON_AddBoolToObject(result, "ok", 0);
+            cJSON_AddStringToObject(result, "error", "unknown irq");
+        } else {
+            cJSON* src_item = cJSON_GetObjectItemCaseSensitive(req, "source");
+            cJSON* det_item = cJSON_GetObjectItemCaseSensitive(req, "detail");
+            const char* src = cJSON_IsString(src_item) ? src_item->valuestring : jvk_irq_name(irq);
+            const char* det = cJSON_IsString(det_item) ? det_item->valuestring : "";
+            if (ic_enqueue(&g_ic, irq, src, det, g_ticks)) {
+                char lmsg[JVK_LOG_LEN];
+                snprintf(lmsg, sizeof(lmsg), "IRQ_ENQUEUED irq=%s source=%s", jvk_irq_name(irq), src);
+                jvk_log(lmsg);
+                cJSON_AddBoolToObject(result, "ok", 1);
+                cJSON_AddStringToObject(result, "irq", jvk_irq_name(irq));
+                cJSON_AddNumberToObject(result, "pending", ic_pending(&g_ic));
+            } else {
+                em_record(&g_em, JVK_ERR_SYSTEM, "interrupt queue full", &g_ic);
+                cJSON_AddBoolToObject(result, "ok", 0);
+                cJSON_AddStringToObject(result, "error", "interrupt queue full");
+            }
+        }
+    } else if (strcmp(action, "list_interrupts") == 0) {
+        ic_snapshot(&g_ic, result);
+        em_snapshot(&g_em, result);
+        cJSON_AddBoolToObject(result, "ok", 1);
+    } else if (strcmp(action, "panic") == 0) {
+        cJSON* reason_item = cJSON_GetObjectItemCaseSensitive(req, "reason");
+        const char* reason = cJSON_IsString(reason_item) ? reason_item->valuestring : "manual panic";
+        ic_set_panic(&g_ic, reason);
+        em_record(&g_em, JVK_ERR_SYSTEM, reason, &g_ic);
+        jvk_log("KERNEL_PANIC");
+        cJSON_AddBoolToObject(result, "ok", 1);
+        cJSON_AddStringToObject(result, "panic", reason);
+    } else if (strcmp(action, "clear_panic") == 0) {
+        ic_clear_panic(&g_ic);
+        cJSON_AddBoolToObject(result, "ok", 1);
     } else {
+        em_record(&g_em, JVK_ERR_CPU, "unknown action", &g_ic);
         jvk_set_error("unknown action");
         jvk_log("command rejected: unknown action");
         cJSON_AddBoolToObject(result, "ok", 0);
@@ -405,6 +467,21 @@ void jvk_tick(void)
            the preemption point a real OS would switch on. */
         if (!g_cpu.regs.halted && executed >= g_clock.quantum) {
             jvk_log("TIMER_INTERRUPT");
+            ic_enqueue(&g_ic, JVK_IRQ_TIMER, "timer", "quantum expired", g_ticks);
+        }
+    }
+
+    /* Service one pending interrupt per tick — priority order, one ISR at a time */
+    if (ic_pending(&g_ic) > 0) {
+        jvk_irq_entry_t irq;
+        if (ic_dequeue_next(&g_ic, &irq)) {
+            char imsg[JVK_LOG_LEN];
+            snprintf(imsg, sizeof(imsg), "IRQ_HANDLED irq=%s source=%s", jvk_irq_name(irq.irq), irq.source);
+            jvk_log(imsg);
+            isr_handle(&g_isr, &g_ic, &irq);
+            if (g_ic.panic) {
+                em_record(&g_em, JVK_ERR_SYSTEM, g_ic.panic_reason, &g_ic);
+            }
         }
     }
 
@@ -431,6 +508,8 @@ const char* jvk_snapshot(void)
     cJSON_AddNumberToObject(root, "uptime_ticks", g_ticks);
     cJSON_AddNumberToObject(root, "processes", g_pm.count);
     kmem_snapshot(&g_mm, root);
+    ic_snapshot(&g_ic, root);
+    em_snapshot(&g_em, root);
 
     cJSON* proc_list = cJSON_CreateArray();
     process_list_to_json(proc_list, &g_pm);
