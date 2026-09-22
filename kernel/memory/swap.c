@@ -1,3 +1,4 @@
+#include <stddef.h>
 /*
  * kernel/memory/swap.c
  *

@@ -1,3 +1,4 @@
+#include <stddef.h>
 /*
  * kernel/memory/frame_table.c
  *

@@ -14,7 +14,7 @@ import ctypes
 import json
 import os
 
-KERNEL_NAME = "jarvis_kernel.dll"
+KERNEL_NAMES = ("libjarvis_kernel.so", "jarvis_kernel.dll")
 
 _kernel: ctypes.CDLL | None = None
 
@@ -26,14 +26,17 @@ def _project_root() -> str:
 
 def kernel_path() -> str:
     candidates = (
-        os.path.join(_project_root(), "kernel", KERNEL_NAME),
-        os.path.join(_project_root(), KERNEL_NAME),
+        os.path.join(_project_root(), "kernel", "libjarvis_kernel.so"),
+        os.path.join(_project_root(), "kernel", "jarvis_kernel.dll"),
+        os.path.join(_project_root(), "libjarvis_kernel.so"),
+        os.path.join(_project_root(), "jarvis_kernel.dll"),
     )
     for path in candidates:
         if os.path.isfile(path):
             return path
     raise FileNotFoundError(
-        f"{KERNEL_NAME} not found. Build it with `mingw32-make` inside kernel/."
+        "Kernel library not found (looked for libjarvis_kernel.so / jarvis_kernel.dll). "
+        "Build it with `make` (Linux) or `mingw32-make` (Windows) inside kernel/."
     )
 
 

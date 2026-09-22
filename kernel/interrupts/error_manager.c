@@ -1,3 +1,4 @@
+#include <stddef.h>
 /*
  * kernel/interrupts/error_manager.c
  *

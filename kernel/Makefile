@@ -14,14 +14,28 @@
 #   mingw32-make clean      # remove build outputs
 #   mingw32-make test       # build + run the C CPU smoke test
 
-CC      := ../.toolchain/gcc/bin/gcc.exe
-NASM    := ../.toolchain/nasm/nasm.exe
+UNAME_S := $(shell uname -s 2>/dev/null || echo Windows)
+ifeq ($(UNAME_S),Linux)
+  CC      ?= gcc
+  NASM    ?= nasm
+  NASM_FMT = elf64
+  TARGET   = libjarvis_kernel.so
+  IMPLIB   =
+  LDFLAGS ?= 
+  TESTBINS = test_cpu test_process test_memory test_interrupts
+else
+  CC      := ../.toolchain/gcc/bin/gcc.exe
+  NASM    := ../.toolchain/nasm/nasm.exe
+  NASM_FMT = win64
+  TARGET   = jarvis_kernel.dll
+  IMPLIB   = libjarvis_kernel.a
+  LDFLAGS ?= -static-libgcc
+  TESTBINS = test_cpu.exe test_process.exe test_memory.exe test_interrupts.exe
+endif
 CFLAGS  ?= -std=c17 -Wall -Wextra -O2
-LDFLAGS ?= -static-libgcc
-
-TARGET   = jarvis_kernel.dll
-IMPLIB   = libjarvis_kernel.a
-TESTBINS = test_cpu.exe test_process.exe test_memory.exe test_interrupts.exe
+ifeq ($(UNAME_S),Linux)
+  CFLAGS += -fPIC
+endif
 
 SRCDIR   = core
 CPUDIR   = cpu
@@ -52,8 +66,13 @@ OBJS = $(SRCS:.c=.o) $(ASM_OBJ)
 
 all: $(TARGET)
 
+ifeq ($(UNAME_S),Linux)
+$(TARGET): $(OBJS)
+	$(CC) -shared -o $@ $(OBJS) $(LDFLAGS)
+else
 $(TARGET): $(OBJS)
 	$(CC) -shared -o $@ $(OBJS) $(LDFLAGS) -Wl,--out-implib,$(IMPLIB)
+endif
 
 %.o: %.c
 	$(CC) $(CFLAGS) -I. -c $< -o $@
@@ -61,25 +80,27 @@ $(TARGET): $(OBJS)
 $(DEPSDIR)/cJSON.o: $(DEPSDIR)/cJSON.c
 	$(CC) $(CFLAGS) -w -I$(DEPSDIR) -c $< -o $@
 
+ifeq ($(UNAME_S),Linux)
 $(ASM_OBJ): $(ASM_SRC)
-	$(NASM) -f win64 -o $@ $<
+	$(NASM) -f $(NASM_FMT) -D__linux__ -o $@ $<
+else
+$(ASM_OBJ): $(ASM_SRC)
+	$(NASM) -f $(NASM_FMT) -o $@ $<
+endif
 
-test: $(TARGET) test_cpu.exe test_process.exe test_memory.exe test_interrupts.exe
-	./test_cpu.exe
-	./test_process.exe
-	./test_memory.exe
-	./test_interrupts.exe
+test: $(TARGET) $(TESTBINS)
+	@for t in $(TESTBINS); do ./$$t; done
 
-test_cpu.exe: tests/test_cpu.c $(OBJS)
+test_cpu test_cpu.exe: tests/test_cpu.c $(OBJS)
 	$(CC) $(CFLAGS) -I. tests/test_cpu.c $(OBJS) $(LDFLAGS) -o $@
 
-test_process.exe: tests/test_process.c $(OBJS)
+test_process test_process.exe: tests/test_process.c $(OBJS)
 	$(CC) $(CFLAGS) -I. tests/test_process.c $(OBJS) $(LDFLAGS) -o $@
 
-test_memory.exe: tests/test_memory.c $(OBJS)
+test_memory test_memory.exe: tests/test_memory.c $(OBJS)
 	$(CC) $(CFLAGS) -I. tests/test_memory.c $(OBJS) $(LDFLAGS) -o $@
 
-test_interrupts.exe: tests/test_interrupts.c $(OBJS)
+test_interrupts test_interrupts.exe: tests/test_interrupts.c $(OBJS)
 	$(CC) $(CFLAGS) -I. tests/test_interrupts.c $(OBJS) $(LDFLAGS) -o $@
 
 clean:

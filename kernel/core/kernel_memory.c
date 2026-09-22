@@ -1,3 +1,4 @@
+#include <stddef.h>
 /*
  * kernel/core/kernel_memory.c
  *

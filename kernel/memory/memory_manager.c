@@ -1,3 +1,4 @@
+#include <stddef.h>
 /*
  * kernel/memory/memory_manager.c
  *

@@ -9,6 +9,8 @@
  *   C set on unsigned carry out (add) or borrow (sub/cmp)
  */
 
+#include <stddef.h>
+
 #include "alu.h"
 
 static uint8_t make_flags(uint32_t result, int carry)

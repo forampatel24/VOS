@@ -1,3 +1,4 @@
+#include <stddef.h>
 /*
  * kernel/tests/test_process.c
  *

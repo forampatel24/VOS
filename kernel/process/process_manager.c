@@ -1,3 +1,4 @@
+#include <stddef.h>
 /*
  * kernel/process/process_manager.c
  *

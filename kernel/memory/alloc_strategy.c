@@ -8,6 +8,8 @@
  * worst_fit : largest run available (largest leftover for later splits).
  */
 
+#include <stddef.h>
+
 #include "alloc_strategy.h"
 
 static int fits_strategy(int run, int best_run, mm_alloc_strategy_t strategy,
