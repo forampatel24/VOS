@@ -69,7 +69,15 @@ def snapshot() -> dict:
 @app.post("/api/command")
 def command(req: CommandRequest) -> dict:
     fields = req.model_dump(exclude={"action"})
-    payload = {"action": req.action, **fields.pop("data", {}), **fields}
+    nested = fields.pop("data", None)
+    if isinstance(nested, dict):
+        # Legacy nested shape: {"action": X, "data": {...}}
+        payload = {"action": req.action, **nested, **fields}
+    else:
+        # Flat shape; "data" may legitimately be a string (device I/O).
+        payload = {"action": req.action, **fields}
+        if nested is not None:
+            payload["data"] = nested
     return jvk_command(payload)
 
 

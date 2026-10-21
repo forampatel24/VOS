@@ -45,13 +45,28 @@ const char* jvk_device_state_name(jvk_device_state_t state)
     return k_states[state];
 }
 
+/* Case-insensitive compare so JSON/UI may send "busy" or "BUSY". */
+static int state_eq(const char* a, const char* b)
+{
+    while (*a != '\0' && *b != '\0') {
+        char ca = *a >= 'A' && *a <= 'Z' ? (char)(*a - 'A' + 'a') : *a;
+        char cb = *b >= 'A' && *b <= 'Z' ? (char)(*b - 'A' + 'a') : *b;
+        if (ca != cb) {
+            return 0;
+        }
+        a++;
+        b++;
+    }
+    return *a == '\0' && *b == '\0';
+}
+
 int jvk_device_state_parse(const char* name, jvk_device_state_t* out)
 {
     if (name == NULL || out == NULL) {
         return 0;
     }
     for (int i = 0; i <= JVK_DEV_DISABLED; i++) {
-        if (strcmp(name, k_states[i]) == 0) {
+        if (state_eq(name, k_states[i])) {
             *out = (jvk_device_state_t)i;
             return 1;
         }
@@ -65,7 +80,7 @@ int jvk_device_parse(const char* name, jvk_device_id_t* out)
         return 0;
     }
     for (int i = 0; i < JVK_DEV_COUNT; i++) {
-        if (strcmp(name, k_keys[i]) == 0 || strcmp(name, k_names[i]) == 0) {
+        if (state_eq(name, k_keys[i]) || state_eq(name, k_names[i])) {
             *out = (jvk_device_id_t)i;
             return 1;
         }

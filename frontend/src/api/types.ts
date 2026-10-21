@@ -108,12 +108,121 @@ export interface SchedulerSnapshot {
   switches: number;
 }
 
+/* ---- M5 virtual filesystem -------------------------------------------- */
+
+export interface FsConfig {
+  total_blocks: number;
+  block_size: number;
+  max_inodes: number;
+  max_blocks_per_file: number;
+  max_open_files: number;
+}
+
+export interface FsStats {
+  inodes_used: number;
+  open_files: number;
+  creates: number;
+  deletes: number;
+  mkdirs: number;
+  reads: number;
+  writes: number;
+  renames: number;
+  copies: number;
+  searches: number;
+  denied: number;
+}
+
+export interface DiskStats {
+  total_blocks: number;
+  block_size: number;
+  used_blocks: number;
+  free_blocks: number;
+  largest_free_run: number;
+  capacity_bytes: number;
+  used_bytes: number;
+  read_ops: number;
+  write_ops: number;
+  alloc_calls: number;
+  free_calls: number;
+}
+
+export interface FsEntry {
+  id: number;
+  name: string;
+  type: "file" | "dir";
+  parent: number;
+  path: string;
+  size: number;
+  owner: number;
+  mode: string;
+  mode_bits: number;
+  block_count: number;
+  blocks: number[];
+  created_ticks: number;
+  modified_ticks: number;
+  hidden: boolean;
+  readonly: boolean;
+}
+
+export interface OpenFile {
+  fd: number;
+  inode_id: number;
+  name: string;
+  path: string;
+  owner: number;
+  cursor: number;
+  mode: string;
+  opened_ticks: number;
+}
+
+export interface FilesystemSnapshot {
+  config: FsConfig;
+  stats: FsStats;
+  disk: DiskStats;
+  entries: FsEntry[];
+  open_files: OpenFile[];
+}
+
+/* ---- M6 devices & drivers --------------------------------------------- */
+
+export interface DeviceEntry {
+  id: number;
+  key: string;
+  name: string;
+  driver: string;
+  state: "CONNECTED" | "DISCONNECTED" | "BUSY" | "WAITING" | "FAULT" | "DISABLED";
+  irq: string;
+  power: boolean;
+  irq_count: number;
+  reads: number;
+  writes: number;
+  errors: number;
+  bytes_in: number;
+  bytes_out: number;
+  info: Record<string, unknown>;
+}
+
+export interface DeviceStats {
+  interrupts: number;
+  errors: number;
+  reads: number;
+  writes: number;
+}
+
+export interface DevicesSnapshot {
+  count: number;
+  stats: DeviceStats;
+  list: DeviceEntry[];
+}
+
 export interface KernelSnapshot {
   booted: boolean;
   shutdown: boolean;
   uptime_ticks: number;
   processes: number;
   memory: MemorySnapshot;
+  filesystem: FilesystemSnapshot;
+  devices: DevicesSnapshot;
   interrupts: InterruptSnapshot;
   error_manager: ErrorManagerSnapshot;
   scheduler: SchedulerSnapshot;

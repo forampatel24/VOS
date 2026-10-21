@@ -14,6 +14,9 @@ set(CMAKE_ASM_NASM_COMPILER
 add_library(jarvis_kernel SHARED
     core/kernel.c
     core/kernel_memory.c
+    core/kernel_fs.c
+    core/kernel_fs_cmds.c
+    core/kernel_devices.c
     cpu/alu.c
     cpu/clock.c
     cpu/cpu.c
@@ -29,6 +32,19 @@ add_library(jarvis_kernel SHARED
     memory/page_table.c
     memory/replace_policy.c
     memory/swap.c
+    filesystem/disk.c
+    filesystem/fs_types.c
+    filesystem/open_table.c
+    filesystem/vfs.c
+    filesystem/vfs_ops.c
+    device/device_types.c
+    device/device_manager.c
+    device/drivers/clock_driver.c
+    device/drivers/disk_driver.c
+    device/drivers/display.c
+    device/drivers/keyboard.c
+    device/drivers/mouse.c
+    device/drivers/printer.c
     interrupts/ic.c
     interrupts/isr.c
     interrupts/error_manager.c

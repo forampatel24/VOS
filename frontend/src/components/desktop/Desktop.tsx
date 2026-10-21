@@ -7,6 +7,8 @@ import MemoryViewer from "@/components/windows/MemoryViewer";
 import CpuScheduler from "@/components/windows/CpuScheduler";
 import EventLog from "@/components/windows/EventLog";
 import InterruptCenter from "@/components/windows/InterruptCenter";
+import FileExplorer from "@/components/windows/FileExplorer";
+import DeviceManager from "@/components/windows/DeviceManager";
 import Placeholder from "@/components/windows/Placeholder";
 
 export default function Desktop() {
@@ -26,6 +28,8 @@ export default function Desktop() {
           { id: "memory", label: "Memory", icon: "⬢" },
           { id: "cpu", label: "CPU", icon: "⬣" },
           { id: "eventlog", label: "Event Log", icon: "≡" },
+          { id: "files", label: "Files", icon: "▤" },
+          { id: "devices", label: "Devices", icon: "⏻" },
           { id: "interrupts", label: "Interrupts", icon: "⚡" },
         ].map((item) => (
           <button
@@ -71,12 +75,12 @@ export default function Desktop() {
         )}
         {windows.files.open && !windows.files.minimized && (
           <Window id="files" title="File Explorer" onClose={() => close("files")}>
-            <Placeholder title="File Explorer" milestone="M5 — File System & Disk" />
+            <FileExplorer />
           </Window>
         )}
         {windows.devices.open && !windows.devices.minimized && (
           <Window id="devices" title="Device Manager" onClose={() => close("devices")}>
-            <Placeholder title="Device Manager" milestone="M6 — Devices & Drivers" />
+            <DeviceManager />
           </Window>
         )}
         {windows.interrupts.open && !windows.interrupts.minimized && (

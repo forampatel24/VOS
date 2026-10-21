@@ -88,20 +88,20 @@ Status legend: LIVE at mid-sem demo · PARTIAL at mid-sem · ARRIVES-WITH-MILEST
 | 8  | CPU & Scheduler              | **LIVE (M4.5)** | clock/quantum + RR/FCFS/SJF/Priority live, `RUNNING/NEXT` + switches |
 | 9  | Memory Manager               | M11a   | M3b (frames, page tables, faults) |
 | 10 | IPC & Synchronization        | M7     | msg queues, shared mem, pipes, mutex/sem |
-| 11 | File Explorer                | M5     | virtual filesystem |
-| 12 | I/O & Device Manager         | M6     | device manager + drivers |
-| 13 | Spooling & Buffer Monitor    | M6     | printer spooler, I/O buffers |
+| 11 | File Explorer                | **LIVE (M5)** | virtual disk + inode tree, CRUD, permissions, open-file table |
+| 12 | I/O & Device Manager         | **LIVE (M6)** | 8 devices, driver states, I/O dispatch, fault/repair |
+| 13 | Spooling & Buffer Monitor    | **LIVE (M6)** | printer spool + keyboard/display buffers in Device Manager |
 | 14 | Interrupt Center             | **LIVE (M4)** | priority queue + panic + page-fault wiring, 6 IRQs + error manager |
 | 15 | Kernel Monitor               | M11a*  | starts as live event stream; enriches every milestone |
 | 16 | System Logs                  | M11a   | `jvk_logs` (exists since M1); search/filter matures M10b |
 | 17 | Terminal / JARVIS Shell      | M8     | shell parser through `jvk_command` |
-| 18 | Device/Hardware View         | M6     | virtual hardware inventory |
+| 18 | Device/Hardware View         | **LIVE (M6)** | virtual hardware inventory in Device Manager |
 | 19 | System Settings              | M10b/M11b | config read/write endpoints over `config/*.json` |
 | 20 | System Information           | post-M11a | trivial snapshot extensions |
 | 21 | Shutdown / Restart Screen    | M8/M11b | `shutdown` command + Electron close sequence |
 
-**Mid-sem review shows 7 fully-live screens (1, 2, 7, 8, 9, 14, 16) with the rest present
-in the menu, greyed as "subsystem offline" — as of 2026-08-29.**
+**Mid-sem review shows 10 fully-live screens (1, 2, 7, 8, 9, 11, 12, 13, 14, 18) with the rest present
+in the menu, greyed as "subsystem offline" — as of 2026-10-21.**
 
 ---
 
@@ -202,10 +202,12 @@ PER-PROCESS: Allocated pages - Frames held - Page Faults   <- real M3b counters
 
 Visualizes allocation/deallocation, free frames, page tables, faults, swap in/out.
 
-### 6.6 File Explorer (#11)
+### 6.6 File Explorer (#11) — LIVE (M5)
 Familiar tree + file list over the virtual filesystem. Operations: create/open/read/write/
-rename/delete/copy/move/search folder+file.
-Path: `React -> FS API -> Kernel -> Filesystem -> disk image`.
+rename/delete/copy/move/search folder+file. Implemented: path bar with `..`, sortable entry
+list, in-place text editor with save, readonly toggle, name search, disk/inode/open-file
+stats. Every row comes from `jvk_snapshot().filesystem`; all actions are `fs_*` kernel commands.
+Path: `React -> FastAPI -> Kernel -> VFS -> virtual disk blocks`.
 
 ### 6.7 IPC & Synchronization (#10)
 
@@ -220,10 +222,13 @@ SEMAPHORE FileAccess:   avail 0, waiting [PID 108, PID 112]
 
 Messages animate between processes; blocked/waiting processes listed from real queues.
 
-### 6.8 I/O & Devices (#12) + Spooling Monitor (#13) + Hardware View (#18)
-Device list with states (connected/busy/waiting/disconnected); I/O request chain visualized
-end-to-end: `Agent -> I/O request -> device -> waiting -> complete -> READY`;
-print/buffer queues from the spooler; virtual hardware inventory.
+### 6.8 I/O & Devices (#12) + Spooling Monitor (#13) + Hardware View (#18) — LIVE (M6)
+Device list with states (connected/busy/waiting/disconnected/fault/disabled); I/O request chain
+visualized end-to-end: `Agent -> I/O request -> device -> waiting -> complete -> READY`;
+print/buffer queues from the spooler; virtual hardware inventory. Implemented in one window:
+8 devices with power/state controls, fault injection + repair, per-device driver panels
+(keyboard inject/read, mouse move, display buffer, printer spool + print-one IRQ, clock timer
+IRQ, disk status), plus cumulative read/write/IRQ/error counters.
 
 ### 6.9 Interrupt Center (#14)
 

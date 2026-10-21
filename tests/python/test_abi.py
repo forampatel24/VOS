@@ -476,6 +476,339 @@ def test_scheduler_config_rejects_unknown() -> None:
     assert "unknown algo" in bad["error"]
 
 
+# ---- M5 virtual filesystem ----------------------------------------------
+
+
+def test_filesystem_is_seeded() -> None:
+    jvk_init({"boot": True})
+    snap = jvk_snapshot()
+    assert "filesystem" in snap
+    fs = snap["filesystem"]
+    assert fs["config"]["total_blocks"] == 1024
+    assert fs["stats"]["inodes_used"] > 0
+    listing = jvk_command({"action": "fs_list", "path": "/"})
+    assert listing["ok"] is True
+    names = {entry["name"] for entry in listing["entries"]}
+    assert {"System", "Agents", "Users", "Temp", "Logs", "Swap"} <= names
+
+
+def test_filesystem_config_is_parsed() -> None:
+    jvk_init({"filesystem": {"blocks": 32, "blockSize": 256}})
+    fs = jvk_snapshot()["filesystem"]
+    assert fs["config"]["total_blocks"] == 32
+    assert fs["config"]["block_size"] == 256
+    assert fs["disk"]["capacity_bytes"] == 32 * 256
+
+
+def test_fs_create_read_and_append() -> None:
+    jvk_init({"boot": True})
+    created = jvk_command({
+        "action": "fs_create",
+        "path": "/Temp/note.txt",
+        "content": "hello",
+    })
+    assert created["ok"] is True
+
+    read = jvk_command({"action": "fs_read", "path": "/Temp/note.txt"})
+    assert read["ok"] is True
+    assert read["content"] == "hello"
+    assert read["bytes"] == 5
+
+    appended = jvk_command({
+        "action": "fs_write",
+        "path": "/Temp/note.txt",
+        "content": " world",
+        "append": True,
+    })
+    assert appended["ok"] is True
+    assert appended["bytes_written"] == 6
+
+    again = jvk_command({"action": "fs_read", "path": "/Temp/note.txt"})
+    assert again["content"] == "hello world"
+
+
+def test_fs_mkdir_rename_and_delete() -> None:
+    jvk_init({"boot": True})
+    assert jvk_command({"action": "fs_mkdir", "path": "/Temp/proj"})["ok"] is True
+    assert jvk_command({
+        "action": "fs_create", "path": "/Temp/proj/a.txt", "content": "x",
+    })["ok"] is True
+
+    renamed = jvk_command({
+        "action": "fs_rename", "path": "/Temp/proj/a.txt", "new_name": "b.txt",
+    })
+    assert renamed["ok"] is True
+    assert jvk_command({"action": "fs_stat", "path": "/Temp/proj/b.txt"})["ok"] is True
+    assert jvk_command({"action": "fs_stat", "path": "/Temp/proj/a.txt"})["ok"] is False
+
+    deleted = jvk_command({"action": "fs_delete", "path": "/Temp/proj/b.txt"})
+    assert deleted["ok"] is True
+    assert jvk_command({"action": "fs_stat", "path": "/Temp/proj/b.txt"})["ok"] is False
+
+
+def test_fs_copy_move_and_search() -> None:
+    jvk_init({"boot": True})
+    jvk_command({"action": "fs_create", "path": "/Temp/src.txt", "content": "payload"})
+    copied = jvk_command({"action": "fs_copy", "src": "/Temp/src.txt", "dst": "/Temp/copy.txt"})
+    assert copied["ok"] is True
+    moved = jvk_command({"action": "fs_move", "src": "/Temp/copy.txt", "dst": "/Users/Admin/copy.txt"})
+    assert moved["ok"] is True
+    assert jvk_command({"action": "fs_stat", "path": "/Users/Admin/copy.txt"})["ok"] is True
+    assert jvk_command({"action": "fs_stat", "path": "/Temp/copy.txt"})["ok"] is False
+
+    found = jvk_command({"action": "fs_search", "pattern": "welcome"})
+    assert found["ok"] is True
+    paths = {entry["path"] for entry in found["entries"]}
+    assert "/Users/Admin/Documents/welcome.txt" in paths
+
+
+def test_fs_permissions_and_readonly() -> None:
+    jvk_init({"boot": True})
+    jvk_command({"action": "fs_create", "path": "/Temp/secret.txt", "content": "s"})
+    assert jvk_command({
+        "action": "fs_chmod", "path": "/Temp/secret.txt", "mode": "600",
+    })["ok"] is True
+
+    denied = jvk_command({"action": "fs_read", "path": "/Temp/secret.txt", "pid": 9})
+    assert denied["ok"] is False
+    assert denied["error"] == "permission denied"
+
+    readonly = jvk_command({
+        "action": "fs_chmod", "path": "/Temp/secret.txt", "readonly": True,
+    })
+    assert readonly["ok"] is True
+    blocked = jvk_command({
+        "action": "fs_write", "path": "/Temp/secret.txt", "content": "x",
+    })
+    assert blocked["ok"] is False
+    assert blocked["error"] == "read-only file"
+
+
+def test_fs_open_table_and_close() -> None:
+    jvk_init({"boot": True})
+    assert jvk_command({
+        "action": "fs_create", "path": "/Temp/fd.txt", "content": "abcdef",
+    })["ok"] is True
+    opened = jvk_command({"action": "fs_open", "path": "/Temp/fd.txt", "mode": "r"})
+    assert opened["ok"] is True
+    fd = opened["fd"]
+    assert fd >= 3
+
+    read = jvk_command({"action": "fs_read", "fd": fd})
+    assert read["ok"] is True
+    assert read["content"] == "abcdef"
+
+    open_files = jvk_snapshot()["filesystem"]["open_files"]
+    assert any(item["fd"] == fd for item in open_files)
+
+    assert jvk_command({"action": "fs_close", "fd": fd})["ok"] is True
+    open_files = jvk_snapshot()["filesystem"]["open_files"]
+    assert all(item["fd"] != fd for item in open_files)
+    assert jvk_command({"action": "fs_read", "fd": fd})["ok"] is False
+
+
+def test_fs_disk_accounting() -> None:
+    jvk_init({"filesystem": {"blocks": 32, "blockSize": 64}})
+    before = jvk_snapshot()["filesystem"]["disk"]["used_blocks"]
+    payload = "A" * 200
+    assert jvk_command({
+        "action": "fs_create", "path": "/Temp/big.txt", "content": payload,
+    })["ok"] is True
+    after = jvk_snapshot()["filesystem"]["disk"]["used_blocks"]
+    assert after > before
+    entry = jvk_command({"action": "fs_stat", "path": "/Temp/big.txt"})["entry"]
+    assert entry["block_count"] >= 4
+
+    assert jvk_command({"action": "fs_delete", "path": "/Temp/big.txt"})["ok"] is True
+    assert jvk_snapshot()["filesystem"]["disk"]["used_blocks"] == before
+
+
+def test_fs_format_reseeds_tree() -> None:
+    jvk_init({"boot": True})
+    jvk_command({"action": "fs_create", "path": "/Temp/temp.txt", "content": "x"})
+    assert jvk_command({"action": "fs_format"})["ok"] is True
+    assert jvk_command({"action": "fs_stat", "path": "/Temp/temp.txt"})["ok"] is False
+    assert jvk_command({
+        "action": "fs_stat", "path": "/Users/Admin/Documents/welcome.txt",
+    })["ok"] is True
+
+
+def test_kill_process_closes_its_files() -> None:
+    jvk_init({"boot": True})
+    created = jvk_command({"action": "create_process", "name": "reader", "burst_time": 5})
+    pid = created["pid"]
+    jvk_command({"action": "fs_create", "path": "/Temp/held.txt", "content": "x"})
+    opened = jvk_command({"action": "fs_open", "path": "/Temp/held.txt", "pid": pid})
+    assert opened["ok"] is True
+
+    killed = jvk_command({"action": "kill_process", "pid": pid})
+    assert killed["ok"] is True
+    assert killed["files_closed"] == 1
+    owners = {item["owner"] for item in jvk_snapshot()["filesystem"]["open_files"]}
+    assert pid not in owners
+
+
+# ---- M6 devices & drivers ------------------------------------------------
+
+
+def _devices() -> dict:
+    return jvk_snapshot()["devices"]
+
+
+def _device(key: str) -> dict:
+    return next(dev for dev in _devices()["list"] if dev["key"] == key)
+
+
+def test_devices_are_registered() -> None:
+    jvk_init({"boot": True})
+    devices = _devices()
+    assert devices["count"] == 8
+    keys = {dev["key"] for dev in devices["list"]}
+    assert keys == {
+        "cpu", "ram", "disk", "keyboard", "mouse", "display", "printer", "clock",
+    }
+    listing = jvk_command({"action": "list_devices"})
+    assert listing["ok"] is True
+    assert listing["devices"]["count"] == 8
+
+
+def test_keyboard_buffer_roundtrip() -> None:
+    jvk_init({"boot": True})
+    assert jvk_command({
+        "action": "device_write", "device": "keyboard", "data": "hello",
+    })["ok"] is True
+    read = jvk_command({"action": "device_read", "device": "keyboard"})
+    assert read["ok"] is True
+    assert read["data"] == "hello"
+    assert read["bytes"] == 5
+    assert jvk_command({"action": "device_read", "device": "keyboard"})["data"] == ""
+
+
+def test_mouse_position() -> None:
+    jvk_init({"boot": True})
+    assert jvk_command({
+        "action": "device_write", "device": "mouse", "data": "640,480",
+    })["ok"] is True
+    info = _device("mouse")["info"]
+    assert info["x"] == 640 and info["y"] == 480
+    jvk_command({"action": "device_write", "device": "mouse", "data": "left"})
+    assert _device("mouse")["info"]["x"] == 639
+
+
+def test_display_output() -> None:
+    jvk_init({"boot": True})
+    assert jvk_command({
+        "action": "device_write", "device": "display", "data": "booting\nready",
+    })["ok"] is True
+    lines = _device("display")["info"]["lines"]
+    assert "booting" in lines and "ready" in lines
+    read = jvk_command({"action": "device_read", "device": "display"})
+    assert "booting" in read["data"]
+
+
+def test_printer_spooling() -> None:
+    jvk_init({"boot": True})
+    jvk_command({"action": "device_write", "device": "printer", "data": "job-a"})
+    jvk_command({"action": "device_write", "device": "printer", "data": "job-b"})
+    assert _device("printer")["info"]["queued"] == 2
+    assert _device("printer")["state"] == "WAITING"
+
+    assert jvk_command({"action": "device_interrupt", "device": "printer"})["ok"] is True
+    info = _device("printer")["info"]
+    assert info["queued"] == 1
+    assert info["printed"] == 1
+
+    read = jvk_command({"action": "device_read", "device": "printer"})
+    assert read["data"] == "job-b"
+    assert _device("printer")["state"] == "CONNECTED"
+
+
+def test_clock_device_and_timer_irq() -> None:
+    jvk_init({"boot": True})
+    before = _device("clock")["info"]["ticks"]
+    assert jvk_command({"action": "device_interrupt", "device": "clock"})["ok"] is True
+    assert _device("clock")["info"]["ticks"] == before + 1
+    queue = jvk_snapshot()["interrupts"]["queue"]
+    assert any(entry["irq"] == "timer" for entry in queue)
+
+
+def test_device_power_and_repair() -> None:
+    jvk_init({"boot": True})
+    off = jvk_command({
+        "action": "device_set", "device": "keyboard", "power": False,
+    })
+    assert off["ok"] is True
+    assert off["state"] == "DISABLED"
+    blocked = jvk_command({
+        "action": "device_write", "device": "keyboard", "data": "x",
+    })
+    assert blocked["ok"] is False
+
+    repaired = jvk_command({"action": "device_repair", "device": "keyboard"})
+    assert repaired["ok"] is True and repaired["state"] == "CONNECTED"
+    assert jvk_command({
+        "action": "device_write", "device": "keyboard", "data": "x",
+    })["ok"] is True
+
+
+def test_device_fault_is_recorded() -> None:
+    jvk_init({"boot": True})
+    faults_before = jvk_snapshot()["error_manager"]["counts"]["device"]
+    fault = jvk_command({
+        "action": "device_fault", "device": "printer", "reason": "paper jam",
+    })
+    assert fault["ok"] is True
+    assert fault["state"] == "FAULT"
+    assert _device("printer")["state"] == "FAULT"
+    assert _devices()["stats"]["errors"] >= 1
+    assert jvk_snapshot()["error_manager"]["counts"]["device"] == faults_before + 1
+
+
+def test_device_state_and_unknown_device() -> None:
+    jvk_init({"boot": True})
+    busy = jvk_command({
+        "action": "device_set", "device": "disk", "state": "busy",
+    })
+    assert busy["ok"] is True and busy["state"] == "BUSY"
+    missing = jvk_command({"action": "device_read", "device": "floppy"})
+    assert missing["ok"] is False
+    assert "unknown device" in missing["error"]
+    assert jvk_command({
+        "action": "device_set", "device": "disk", "state": "teleporting",
+    })["ok"] is False
+
+
+def test_fastapi_command_accepts_flat_device_data() -> None:
+    jvk_init({"boot": True})
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/command",
+            json={"action": "device_write", "device": "keyboard", "data": "typed"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ok"] is True
+        assert body["bytes"] == 5
+
+        read = client.post(
+            "/api/command", json={"action": "device_read", "device": "keyboard"}
+        ).json()
+        assert read["data"] == "typed"
+
+
+def test_fastapi_command_accepts_nested_data() -> None:
+    jvk_init({"boot": True})
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/command",
+            json={"action": "fs_read", "data": {"path": "/System/README.txt"}},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ok"] is True
+        assert "virtual filesystem" in body["content"]
+
+
 def test_fastapi_health_endpoint() -> None:
     with TestClient(app) as client:
         resp = client.get("/health")

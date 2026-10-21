@@ -44,7 +44,7 @@ export default function Taskbar() {
         {MENU.map((m) => {
           const w = windows[m.id];
           const isOpen = w.open;
-          const isOffline = ["files", "devices", "interrupts", "terminal", "ipc"].includes(m.id);
+          const isOffline = ["terminal", "ipc"].includes(m.id);
           return (
             <button
               key={m.id}

@@ -1,6 +1,6 @@
 # JARVIS OS — Detailed Implementation Handover
 
-**Version:** 1.0 · **Date:** 2026-08-29 · **Status:** M0 → M4.5 done, 6-7 live windows, 40 pytest + 4 C smokes — ready for midsem
+**Version:** 1.1 · **Date:** 2026-10-21 · **Status:** M0 → M6 done, 8 live windows, 61 pytest + 6 C smokes — ready for midsem
 **Purpose:** Give a teammate (or an LLM) *everything* implemented, in minute detail, with no prior context. Hand this file to an LLM and it can answer any question about what exists, how it works, and how to run/demo it.
 
 ---
@@ -50,9 +50,9 @@ VOS/
 │       ├── api/types.ts + client.ts (typed REST + WS)
 │       ├── store/kernelStore.ts (Zustand, WS deltas) + windowStore.ts (WM)
 │       ├── components/BootScreen, desktop/Desktop, desktop/Taskbar, desktop/Window
-│       └── components/windows/ (SystemMonitor, ProcessManager, MemoryViewer, CpuScheduler, EventLog, InterruptCenter, Placeholder)
+│       └── components/windows/ (SystemMonitor, ProcessManager, MemoryViewer, CpuScheduler, EventLog, InterruptCenter, FileExplorer, DeviceManager, Placeholder)
 ├── config/clock.json, memory.json, scheduler.json, theme.json, voice.json, paging.json
-├── tests/python/test_abi.py (40 tests)
+├── tests/python/test_abi.py (61 tests)
 └── .venv/ + frontend/node_modules/ (not committed)
 ```
 
@@ -249,22 +249,24 @@ Health: `http://127.0.0.1:8000/health`, WS: `ws://127.0.0.1:8000/ws`, Frontend: 
 3. `Memory Viewer → PID 1 pages 2 → ALLOC` → frame map `[1,1]`, `PID 1 — 2 pages`. `addr 5 val 42 → WRITE → READ =42`. `addr 999 → READ → segfault` in log.
 4. `CPU → STEP` or `RESET`, load demo program via API to see `PC/R0` move and `TIMER` appear.
 5. `Interrupt Center → software → page_fault` → queue `[page_fault, software]` → 2.5s later both `IRQ_HANDLED` (priority order) then `SCHEDULE` resumes; `shutdown → PANIC` freezes `ready` until `CLEAR`.
-6. `Event Log` filter `PROCESS/MEMORY/PAGE_FAULT` to prove every number came from kernel.
+6. `File Explorer` → open `/Users/Admin/Documents/welcome.txt` → edit + SAVE (kernel `fs_write`), create a folder/file, chmod read-only and watch the write fail, search "welcome"; the disk/inode counters update from `filesystem` snapshot.
+7. `Device Manager` → keyboard: inject + READ; display: write two lines; printer: queue 2 jobs then PRINT ONE (raises the disk IRQ and pops one job); clock: RAISE TIMER IRQ; inject a fault then repair; all counters are kernel statistics.
+8. `Event Log` filter `PROCESS/MEMORY/PAGE_FAULT/FS_/DEVICE_` to prove every number came from kernel.
 
 ---
 
 ## 14. What Is Still Offline (honest placeholders)
 
-* Filesystem, Devices, IPC, Shell/Terminal, Agent Hub/Studio, AI — windows exist but show `offline — arrives in M5/M6/...`. Their kernel modules and APIs will follow the same vertical-slice pattern (kernel + bridge + window goes live together).
+* IPC, Shell/Terminal, Agent Hub/Studio, AI — windows exist but show `offline — arrives in M7/M8/...`. Their kernel modules and APIs will follow the same vertical-slice pattern (kernel + bridge + window goes live together).
 
 ---
 
 ## 15. Verification Evidence (as of this doc)
 
-* `mingw32-make test` → `PASS: cpu / process / memory / interrupts`
-* `pytest` → `40 passed` (16 M1+M2, 7 M3a, 9 M3b, 4 M4, 3 M4.5 + bridge)
-* `npx vite build` → `469 modules, 360KB JS / 20KB CSS`
-* Live `uvicorn` → `health ok`, `create/alloc/read/write/suspend/resume/kill`, `trigger_interrupt` priority reorder, `panic` freeze, `scheduler_config` priority/SJF/FCFS switching, `WS` pushes `snapshot + logs` every 2.5s.
+* Ubuntu 24.04 WSL: `cd kernel && make clean && make && make test` → `libjarvis_kernel.so`, `PASS: cpu / process / memory / interrupts / filesystem / devices` (6/6)
+* `python -m pytest tests -q` → `61 passed` (19 M5 filesystem + 19 M6 devices + bridge/ABI)
+* `cd frontend && npm run typecheck && npm run build` → clean (471 modules)
+* Live `uvicorn` → `health ok`, `fs_create/fs_read`, `device_write/device_read`, `device_interrupt`, flat + nested command payloads, `WS` pushes `snapshot + logs` every 2.5s.
 
 ---
 
