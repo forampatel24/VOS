@@ -19,7 +19,9 @@ typedef enum {
     JVK_ERR_PROCESS = 2, /* bad pid, table full */
     JVK_ERR_CPU     = 3, /* invalid opcode */
     JVK_ERR_SYSTEM  = 4, /* panic */
-    JVK_ERR_COUNT   = 5,
+    JVK_ERR_FILESYSTEM = 5,
+    JVK_ERR_DEVICE  = 6,
+    JVK_ERR_COUNT   = 7,
 } jvk_error_category_t;
 
 typedef struct {

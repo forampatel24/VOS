@@ -36,6 +36,8 @@
 #include "interrupts/error_manager.h"
 #include "interrupts/ic.h"
 #include "interrupts/isr.h"
+#include "kernel_devices.h"
+#include "kernel_fs.h"
 #include "kernel_memory.h"
 #include "memory/memory_manager.h"
 #include "process/process_manager.h"
@@ -55,8 +57,8 @@ static char          g_logs[JVK_LOG_CAP][JVK_LOG_LEN];
 static int           g_log_count = 0;
 
 static char          g_init_buf[128];
-static char          g_cmd_buf[4096];
-static char          g_snap_buf[65536];
+static char          g_cmd_buf[131072];
+static char          g_snap_buf[262144];
 static char          g_log_buf[JVK_LOG_CAP * (JVK_LOG_LEN + 32)];
 
 static jvk_cpu_t     g_cpu;
@@ -67,6 +69,8 @@ static jvk_memory_manager_t  g_mm;
 static jvk_ic_t              g_ic;
 static jvk_isr_registry_t    g_isr;
 static jvk_error_manager_t   g_em;
+static jvk_vfs_t             g_fs;
+static jvk_device_manager_t  g_dm;
 static int           g_current_pid = -1;
 static int           g_cpu_halt_logged = 0;
 
@@ -100,6 +104,31 @@ static void mem_event_trampoline(void* user, const char* message)
 static void jvk_set_error(const char* msg)
 {
     snprintf(g_last_error, sizeof(g_last_error), "%s", msg);
+}
+
+/* Filesystem subsystem events: log them, and escalate permission denials. */
+static void fs_event_trampoline(void* user, const char* message)
+{
+    (void)user;
+    jvk_log(message);
+    if (strncmp(message, "FS_DENIED", 9) == 0) {
+        em_record(&g_em, JVK_ERR_FILESYSTEM, message, &g_ic);
+    }
+}
+
+static void dev_event_trampoline(void* user, const char* message)
+{
+    (void)user;
+    jvk_log(message);
+}
+
+/* Every hardware IRQ line is delivered to the devices sitting on it. */
+static void dev_isr_bridge(jvk_ic_t* ic, const jvk_irq_entry_t* entry, void* user)
+{
+    (void)ic;
+    if (entry != NULL) {
+        kdev_deliver_irq((jvk_device_manager_t*)user, (int)entry->irq);
+    }
 }
 
 /* ---- JSON helpers ---------------------------------------------------- */
@@ -211,6 +240,11 @@ const char* jvk_init(const char* config_json)
         }
     }
 
+    if (g_booted) {
+        vfs_shutdown(&g_fs);
+        dm_shutdown(&g_dm);
+    }
+
     g_booted    = 1;
     g_ticks     = 0;
     g_shutdown  = 0;
@@ -235,6 +269,28 @@ const char* jvk_init(const char* config_json)
     isr_init(&g_isr);
     isr_register_defaults(&g_isr);
     em_init(&g_em);
+
+    if (!kfs_boot(&g_fs, root)) {
+        cJSON_Delete(root);
+        g_booted = 0;
+        return fail("filesystem init failed");
+    }
+    if (!kdev_boot(&g_dm)) {
+        cJSON_Delete(root);
+        g_booted = 0;
+        return fail("device manager init failed");
+    }
+    kfs_seed(&g_fs, 0);
+    vfs_set_observer(&g_fs, fs_event_trampoline, NULL);
+    dm_set_observer(&g_dm, dev_event_trampoline, NULL);
+
+    /* Hardware IRQ lines are forwarded to the device layer. */
+    isr_register(&g_isr, JVK_IRQ_TIMER,      dev_isr_bridge, &g_dm);
+    isr_register(&g_isr, JVK_IRQ_DISK,       dev_isr_bridge, &g_dm);
+    isr_register(&g_isr, JVK_IRQ_KEYBOARD,   dev_isr_bridge, &g_dm);
+    isr_register(&g_isr, JVK_IRQ_SOFTWARE,   dev_isr_bridge, &g_dm);
+    isr_register(&g_isr, JVK_IRQ_PAGE_FAULT, dev_isr_bridge, &g_dm);
+
     cJSON_Delete(root);
 
     jvk_log("kernel booted");
@@ -253,6 +309,13 @@ const char* jvk_init(const char* config_json)
              g_mm.cfg.total_frames, mm_alloc_name(g_mm.cfg.allocator),
              mm_replace_name(g_mm.cfg.replacement),
              g_mm.cfg.swap_enabled ? "on" : "off");
+    jvk_log(msg);
+
+    snprintf(msg, sizeof(msg),
+             "filesystem: blocks=%d block_size=%d inodes=%d",
+             g_fs.disk.total_blocks, g_fs.disk.block_size, g_fs.inode_count);
+    jvk_log(msg);
+    snprintf(msg, sizeof(msg), "devices: registered=%d", g_dm.count);
     jvk_log(msg);
 
     snprintf(g_init_buf, sizeof(g_init_buf), "ok");
@@ -361,6 +424,7 @@ const char* jvk_command(const char* action_json)
         if (pm_kill(&g_pm, pid)) {
             scheduler_unregister(&g_sched, pid);
             int freed = mm_free_pid(&g_mm, pid);
+            int closed = kfs_close_owner(&g_fs, pid);
             char msg[JVK_LOG_LEN];
             snprintf(msg, sizeof(msg), "PROCESS_KILLED pid=%d", pid);
             jvk_log(msg);
@@ -368,6 +432,8 @@ const char* jvk_command(const char* action_json)
             cJSON_AddNumberToObject(result, "pid", pid);
             cJSON_AddNumberToObject(result, "memory_pages_freed",
                                     freed > 0 ? freed : 0);
+            cJSON_AddNumberToObject(result, "files_closed",
+                                    closed > 0 ? closed : 0);
         } else {
             cJSON_AddBoolToObject(result, "ok", 0);
             cJSON_AddStringToObject(result, "error", "process not found");
@@ -487,6 +553,21 @@ const char* jvk_command(const char* action_json)
         cJSON_AddNumberToObject(result, "switches", g_sched.switches);
         cJSON_AddNumberToObject(result, "current", g_current_pid);
         cJSON_AddBoolToObject(result, "ok", 1);
+    } else if (strncmp(action, "fs_", 3) == 0) {
+        if (!kfs_handle(&g_fs, action, req, result, g_ticks)) {
+            em_record(&g_em, JVK_ERR_FILESYSTEM, "unknown fs action", &g_ic);
+            jvk_set_error("unknown action");
+            cJSON_AddBoolToObject(result, "ok", 0);
+            cJSON_AddStringToObject(result, "error", "unknown action");
+        }
+    } else if (strcmp(action, "list_devices") == 0 ||
+               strncmp(action, "device_", 7) == 0) {
+        if (!kdev_handle(&g_dm, action, req, result, &g_ic, &g_em, g_ticks)) {
+            em_record(&g_em, JVK_ERR_DEVICE, "unknown device action", &g_ic);
+            jvk_set_error("unknown action");
+            cJSON_AddBoolToObject(result, "ok", 0);
+            cJSON_AddStringToObject(result, "error", "unknown action");
+        }
     } else {
         em_record(&g_em, JVK_ERR_CPU, "unknown action", &g_ic);
         jvk_set_error("unknown action");
@@ -579,6 +660,8 @@ const char* jvk_snapshot(void)
     kmem_snapshot(&g_mm, root);
     ic_snapshot(&g_ic, root);
     em_snapshot(&g_em, root);
+    kfs_snapshot(&g_fs, root);
+    kdev_snapshot(&g_dm, root);
 
     cJSON* sched = cJSON_CreateObject();
     cJSON_AddStringToObject(sched, "algo", scheduler_algo_name(g_sched.algo));

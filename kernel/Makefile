@@ -22,7 +22,7 @@ ifeq ($(UNAME_S),Linux)
   TARGET   = libjarvis_kernel.so
   IMPLIB   =
   LDFLAGS ?= 
-  TESTBINS = test_cpu test_process test_memory test_interrupts
+  TESTBINS = test_cpu test_process test_memory test_interrupts test_filesystem test_devices
 else
   CC      := ../.toolchain/gcc/bin/gcc.exe
   NASM    := ../.toolchain/nasm/nasm.exe
@@ -30,7 +30,7 @@ else
   TARGET   = jarvis_kernel.dll
   IMPLIB   = libjarvis_kernel.a
   LDFLAGS ?= -static-libgcc
-  TESTBINS = test_cpu.exe test_process.exe test_memory.exe test_interrupts.exe
+  TESTBINS = test_cpu.exe test_process.exe test_memory.exe test_interrupts.exe test_filesystem.exe test_devices.exe
 endif
 CFLAGS  ?= -std=c17 -Wall -Wextra -O2
 ifeq ($(UNAME_S),Linux)
@@ -45,8 +45,13 @@ MEMDIR   = memory
 INTDIR   = interrupts
 ASMDIR   = asm
 DEPSDIR  = deps/cJSON
+FSDIR    = filesystem
+DEVDIR   = device
+DRVDIR   = device/drivers
 
 SRCS = $(SRCDIR)/kernel.c $(SRCDIR)/kernel_memory.c \
+       $(SRCDIR)/kernel_fs.c $(SRCDIR)/kernel_fs_cmds.c \
+       $(SRCDIR)/kernel_devices.c \
        $(CPUDIR)/alu.c $(CPUDIR)/clock.c $(CPUDIR)/cpu.c \
        $(SCHEDDIR)/scheduler.c \
        $(PROCDIR)/context_switch.c $(PROCDIR)/pid_gen.c \
@@ -54,6 +59,12 @@ SRCS = $(SRCDIR)/kernel.c $(SRCDIR)/kernel_memory.c \
        $(MEMDIR)/alloc_strategy.c $(MEMDIR)/frame_table.c \
        $(MEMDIR)/memory_manager.c $(MEMDIR)/mm_types.c \
        $(MEMDIR)/page_table.c $(MEMDIR)/replace_policy.c $(MEMDIR)/swap.c \
+       $(FSDIR)/disk.c $(FSDIR)/fs_types.c $(FSDIR)/open_table.c \
+       $(FSDIR)/vfs.c $(FSDIR)/vfs_ops.c \
+       $(DEVDIR)/device_types.c $(DEVDIR)/device_manager.c \
+       $(DRVDIR)/clock_driver.c $(DRVDIR)/disk_driver.c \
+       $(DRVDIR)/display.c $(DRVDIR)/keyboard.c $(DRVDIR)/mouse.c \
+       $(DRVDIR)/printer.c \
        $(INTDIR)/ic.c $(INTDIR)/isr.c $(INTDIR)/error_manager.c \
        $(DEPSDIR)/cJSON.c
 
@@ -102,6 +113,12 @@ test_memory test_memory.exe: tests/test_memory.c $(OBJS)
 
 test_interrupts test_interrupts.exe: tests/test_interrupts.c $(OBJS)
 	$(CC) $(CFLAGS) -I. tests/test_interrupts.c $(OBJS) $(LDFLAGS) -o $@
+
+test_filesystem test_filesystem.exe: tests/test_filesystem.c $(OBJS)
+	$(CC) $(CFLAGS) -I. tests/test_filesystem.c $(OBJS) $(LDFLAGS) -o $@
+
+test_devices test_devices.exe: tests/test_devices.c $(OBJS)
+	$(CC) $(CFLAGS) -I. tests/test_devices.c $(OBJS) $(LDFLAGS) -o $@
 
 clean:
 	rm -f $(OBJS) $(TARGET) $(IMPLIB) $(TESTBINS)

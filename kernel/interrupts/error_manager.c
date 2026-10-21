@@ -41,6 +41,8 @@ const char* em_category_name(jvk_error_category_t cat)
     case JVK_ERR_PROCESS: return "process";
     case JVK_ERR_CPU:     return "cpu";
     case JVK_ERR_SYSTEM:  return "system";
+    case JVK_ERR_FILESYSTEM: return "filesystem";
+    case JVK_ERR_DEVICE:  return "device";
     default:              return "none";
     }
 }
