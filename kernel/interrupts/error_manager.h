@@ -21,7 +21,8 @@ typedef enum {
     JVK_ERR_SYSTEM  = 4, /* panic */
     JVK_ERR_FILESYSTEM = 5,
     JVK_ERR_DEVICE  = 6,
-    JVK_ERR_COUNT   = 7,
+    JVK_ERR_IPC     = 7,
+    JVK_ERR_COUNT   = 8,
 } jvk_error_category_t;
 
 typedef struct {

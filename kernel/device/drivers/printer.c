@@ -108,7 +108,7 @@ static void printer_snapshot(const jvk_device_t* dev, cJSON* out)
 
 static const jvk_driver_ops_t g_printer_ops = {
     printer_init, printer_shutdown, printer_read, printer_write,
-    printer_interrupt, printer_error, printer_snapshot,
+    printer_interrupt, printer_error, printer_snapshot, NULL,
 };
 
 const jvk_driver_ops_t* jvk_driver_printer_ops(void)

@@ -45,6 +45,8 @@ int scheduler_register_ex(jvk_scheduler_t* sched, int pid, const char* name,
     sched->priority[sched->count]  = priority;
     sched->burst[sched->count]     = burst;
     sched->arrival[sched->count]   = arrival;
+    sched->wait_ticks[sched->count] = 0;
+    sched->run_ticks[sched->count]  = 0;
     snprintf(sched->names[sched->count], 32, "%s", name);
     sched->count++;
     return 1;
@@ -101,12 +103,21 @@ int scheduler_unregister(jvk_scheduler_t* sched, int pid)
     if (idx < 0) {
         return 0;
     }
+    /* Final accounting: the finished process contributes one wait sample
+       and one turnaround sample (completion tick - arrival tick). */
+    sched->completed++;
+    sched->wait_total += sched->wait_ticks[idx];
+    sched->turnaround_total +=
+        sched->ticks > sched->arrival[idx] ? sched->ticks - sched->arrival[idx] : 0;
+
     for (int i = idx; i < sched->count - 1; i++) {
         sched->pids[i]     = sched->pids[i + 1];
         sched->ready[i]    = sched->ready[i + 1];
         sched->priority[i] = sched->priority[i + 1];
         sched->burst[i]    = sched->burst[i + 1];
         sched->arrival[i]  = sched->arrival[i + 1];
+        sched->wait_ticks[i] = sched->wait_ticks[i + 1];
+        sched->run_ticks[i]  = sched->run_ticks[i + 1];
         memcpy(sched->names[i], sched->names[i + 1], 32);
     }
     sched->count--;
@@ -124,6 +135,45 @@ int scheduler_set_ready(jvk_scheduler_t* sched, int pid, int ready)
     }
     sched->ready[idx] = ready;
     return 1;
+}
+
+void scheduler_account(jvk_scheduler_t* sched, int running_pid)
+{
+    if (sched == NULL) {
+        return;
+    }
+    sched->ticks++;
+    int r = scheduler_find(sched, running_pid);
+    if (r >= 0 && sched->ready[r]) {
+        sched->busy_ticks++;
+        sched->run_ticks[r]++;
+    } else {
+        r = -1;
+    }
+    /* Every other runnable process spent this tick waiting. */
+    for (int i = 0; i < sched->count; i++) {
+        if (i != r && sched->ready[i]) {
+            sched->wait_ticks[i]++;
+        }
+    }
+}
+
+void scheduler_metrics(const jvk_scheduler_t* sched, double* cpu_utilization,
+                       double* avg_wait, double* avg_turnaround)
+{
+    double util = 0.0, wait = 0.0, turn = 0.0;
+    if (sched != NULL) {
+        if (sched->ticks > 0) {
+            util = (double)sched->busy_ticks / (double)sched->ticks;
+        }
+        if (sched->completed > 0) {
+            wait = (double)sched->wait_total / (double)sched->completed;
+            turn = (double)sched->turnaround_total / (double)sched->completed;
+        }
+    }
+    if (cpu_utilization != NULL) *cpu_utilization = util;
+    if (avg_wait != NULL)       *avg_wait = wait;
+    if (avg_turnaround != NULL) *avg_turnaround = turn;
 }
 
 int scheduler_schedule(jvk_scheduler_t* sched)

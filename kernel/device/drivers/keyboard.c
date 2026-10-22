@@ -92,6 +92,7 @@ static void kb_snapshot(const jvk_device_t* dev, cJSON* out)
 
 static const jvk_driver_ops_t g_kb_ops = {
     kb_init, kb_shutdown, kb_read, kb_write, kb_interrupt, kb_error, kb_snapshot,
+    NULL,
 };
 
 const jvk_driver_ops_t* jvk_driver_keyboard_ops(void)

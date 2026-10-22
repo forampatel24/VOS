@@ -34,6 +34,14 @@ typedef struct {
     mm_replace_policy_t replacement;
     int                 swap_enabled;
     int                 swap_slots;
+    /* M3b per-agent budget: default cap in pages (0 = unlimited). */
+    int                 agent_budget_pages;
+    /* Paging policy (config/paging.json): per-agent tables, and whether
+       the replaced/dirty hints influence victim choice and swap-out. */
+    char                page_table_strategy[20];
+    int                 present_bit;
+    int                 dirty_bit;
+    int                 referenced_bit;
 } mm_config_t;
 
 typedef struct {
@@ -49,6 +57,8 @@ typedef struct {
     jvk_swap_t       swap;
     mm_page_table_t  tables[JVK_MM_MAX_PROCS];
     int              pids[JVK_MM_MAX_PROCS]; /* 0 = free slot */
+    int              budget_pid[JVK_MM_MAX_PROCS];   /* pid owning slot   */
+    int              budget_pages[JVK_MM_MAX_PROCS]; /* pages cap, 0=none */
     int            (*data)[JVK_MM_PAGE_WORDS]; /* heap: frame storage */
     unsigned long    seq;        /* monotonic FIFO/LRU stamp */
     int              clock_hand;
@@ -82,5 +92,14 @@ mm_status_t mm_read(jvk_memory_manager_t* mm, int pid, int addr,
                     int* out_value);
 mm_status_t mm_write(jvk_memory_manager_t* mm, int pid, int addr,
                      int value);
+
+/* ---- M3b per-agent budget --------------------------------------------- */
+
+/* Override the budget for one pid (0 removes the override). */
+int mm_set_budget(jvk_memory_manager_t* mm, int pid, int pages);
+/* Effective cap for a pid in pages (0 = unlimited). */
+int mm_budget_of(const jvk_memory_manager_t* mm, int pid);
+/* Resident + swapped pages currently owned by the pid. */
+int mm_pages_of(const jvk_memory_manager_t* mm, int pid);
 
 #endif /* JARVIS_MEMORY_MANAGER_H */

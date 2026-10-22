@@ -35,6 +35,7 @@ typedef struct {
     cpu_regs_t       regs;             /* saved register/PC context */
     unsigned long    created_ticks;    /* AT */
     int              cpu_used;         /* instructions executed so far */
+    int              mem_budget_pages; /* M3b per-agent cap, 0 = default */
 } jvk_pcb_t;
 
 #endif /* JARVIS_PCB_H */

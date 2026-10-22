@@ -4,8 +4,8 @@
  * JARVIS OS — common driver interface.
  *
  * Every driver implements the same operations: init, shutdown, read,
- * write, handle_interrupt, report_error and snapshot. The device
- * manager calls them; nothing else may.
+ * write, handle_interrupt, report_error and snapshot. Drivers that buffer
+ * writes (the disk) may also implement flush. Nothing else may call them.
  */
 
 #ifndef JARVIS_BASE_DEVICE_H
@@ -25,6 +25,8 @@ typedef struct {
     void (*handle_interrupt)(jvk_device_t* dev);
     void (*report_error)(jvk_device_t* dev, const char* message);
     void (*snapshot)(const jvk_device_t* dev, struct cJSON* out);
+    /* Optional: commit buffered writes; NULL when the driver never buffers. */
+    int  (*flush)(jvk_device_t* dev);
 } jvk_driver_ops_t;
 
 struct jvk_device {

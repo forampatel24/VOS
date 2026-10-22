@@ -69,7 +69,7 @@ static void clock_dev_snapshot(const jvk_device_t* dev, cJSON* out)
 
 static const jvk_driver_ops_t g_clock_ops = {
     clock_dev_init, clock_dev_shutdown, clock_dev_read, clock_dev_write,
-    clock_dev_interrupt, clock_dev_error, clock_dev_snapshot,
+    clock_dev_interrupt, clock_dev_error, clock_dev_snapshot, NULL,
 };
 
 const jvk_driver_ops_t* jvk_driver_clock_ops(void)

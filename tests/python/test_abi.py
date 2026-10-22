@@ -12,6 +12,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from backend.main import app
+from backend.services.config_loader import load_config
 from backend.services.kernel_loader import (
     jvk_command,
     jvk_init,
@@ -809,6 +810,133 @@ def test_fastapi_command_accepts_nested_data() -> None:
         assert "virtual filesystem" in body["content"]
 
 
+def test_config_loader_merges_sections() -> None:
+    cfg = load_config()
+    assert cfg["boot"] is True
+    # memory.json + paging.json both land in the "memory" section
+    assert cfg["memory"]["totalPages"] == 1024
+    assert cfg["memory"]["replacement"] == "clock"  # normalised alias
+    assert cfg["memory"]["pageTableStrategy"] == "per-agent"
+    assert cfg["memory"]["referencedBit"] is True
+    # fs.json / device.json / machine.json each feed their own kernel section
+    assert cfg["filesystem"]["blocks"] == 1024
+    assert cfg["devices"]["keyboard"]["irq"] == "keyboard"
+    assert cfg["machine"]["busSpeedMHz"] == 800
+    # documentation keys never reach the kernel
+    assert "_comment" not in cfg["memory"]
+
+
+def test_machine_snapshot_from_config() -> None:
+    assert jvk_init(load_config()) == "ok"
+    machine = jvk_snapshot()["machine"]
+    assert machine["board"] == "JVK-VB1"
+    assert machine["chipset"] == "JARVIS-VC1"
+    assert machine["bus_speed_mhz"] == 800
+    assert machine["boot_device"] == "/dev/vdisk0"
+    assert machine["power_on"] is True
+    assert machine["post_ok"] is True
+    assert machine["ram_frames"] == 1024
+    assert len(machine["slots"]) >= 2
+    kinds = {slot["kind"] for slot in machine["slots"]}
+    assert {"cpu", "ram"} <= kinds
+
+
+def test_agent_memory_budget_enforced() -> None:
+    cfg = {"boot": True, "memory": {"totalPages": 32, "agentBudgetPages": 2}}
+    assert jvk_init(cfg) == "ok"
+    created = jvk_command({
+        "action": "create_process", "name": "budgeted", "mem_budget": 2,
+    })
+    assert created["ok"] is True and created["mem_budget_pages"] == 2
+    pid = created["pid"]
+
+    assert jvk_command({"action": "mem_alloc", "pid": pid, "pages": 2})["ok"] is True
+    denied = jvk_command({"action": "mem_alloc", "pid": pid, "pages": 1})
+    assert denied["ok"] is False
+    assert "budget" in denied["error"]
+
+    logs = " | ".join(e["message"] for e in jvk_logs(0)["logs"])
+    assert "MEM_BUDGET_SET" in logs and "MEM_BUDGET_DENIED" in logs
+
+    entry = next(
+        p for p in jvk_snapshot()["process_list"] if p["pid"] == pid
+    )
+    assert entry["mem_budget_pages"] == 2
+    assert entry["mem_pages"] == 2
+
+
+def test_default_memory_budget_applies_to_agents() -> None:
+    cfg = {"boot": True, "memory": {"totalPages": 16, "agentBudgetPages": 1}}
+    assert jvk_init(cfg) == "ok"
+    jvk_command({"action": "create_process", "name": "capped"})
+    assert jvk_command({"action": "mem_alloc", "pid": 1, "pages": 1})["ok"] is True
+    assert jvk_command({"action": "mem_alloc", "pid": 1, "pages": 1})["ok"] is False
+
+
+def test_scheduler_metrics_reported() -> None:
+    assert jvk_init({"boot": True}) == "ok"
+    jvk_command({"action": "create_process", "name": "m1", "burst_time": 4})
+    second = jvk_command({"action": "create_process", "name": "m2", "burst_time": 2})
+    for _ in range(6):
+        jvk_tick()
+    sched = jvk_snapshot()["scheduler"]
+    assert 0.0 < sched["cpu_utilization"] <= 1.0
+    assert sched["avg_wait"] >= 0.0
+    assert sched["context_switch_irqs"] >= 1
+
+    jvk_command({"action": "kill_process", "pid": second["pid"]})
+    listing = jvk_command({"action": "list_scheduler"})
+    assert listing["completed"] == 1
+    assert listing["avg_turnaround"] > 0
+
+
+def test_context_switch_interrupt_raised() -> None:
+    assert jvk_init({"boot": True}) == "ok"
+    jvk_command({"action": "create_process", "name": "c1"})
+    jvk_command({"action": "create_process", "name": "c2"})
+    for _ in range(6):
+        jvk_tick()
+    logs = " | ".join(e["message"] for e in jvk_logs(0)["logs"])
+    assert "irq=context_switch" in logs
+    assert jvk_snapshot()["scheduler"]["context_switch_irqs"] >= 1
+
+
+def test_device_config_disable_and_irq_override() -> None:
+    cfg = {
+        "boot": True,
+        "devices": {
+            "mouse": {"enabled": False},
+            "printer": {"irq": "timer"},
+        },
+    }
+    assert jvk_init(cfg) == "ok"
+    assert _device("mouse")["state"] == "DISABLED"
+    assert _device("printer")["irq"] == "timer"
+    assert _device("keyboard")["irq"] == "keyboard"
+
+
+def test_disk_write_buffer_and_flush() -> None:
+    assert jvk_init({"boot": True}) == "ok"
+    jvk_command({"action": "device_write", "device": "disk", "data": "blk-1"})
+    jvk_command({"action": "device_write", "device": "disk", "data": "blk-2"})
+    info = _device("disk")["info"]
+    assert info["buffered"] == 2 and info["flushes"] == 0
+
+    flushed = jvk_command({"action": "device_flush", "device": "disk"})
+    assert flushed["ok"] is True and flushed["flushed"] == 2
+    after = _device("disk")["info"]
+    assert after["buffered"] == 0 and after["flushes"] == 1
+
+
+def test_fastapi_config_endpoint() -> None:
+    with TestClient(app) as client:
+        resp = client.get("/api/config")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["machine"]["chipset"] == "JARVIS-VC1"
+        assert body["filesystem"]["blockSize"] == 4096
+
+
 def test_fastapi_health_endpoint() -> None:
     with TestClient(app) as client:
         resp = client.get("/health")
@@ -832,6 +960,231 @@ def test_fastapi_tick_endpoint() -> None:
         resp = client.get("/api/tick")
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
+
+
+# ---- M7 IPC -----------------------------------------------------------
+
+
+def test_ipc_snapshot_has_seeded_objects() -> None:
+    assert jvk_init({"boot": True}) == "ok"
+    ipc = jvk_snapshot()["ipc"]
+    assert ipc["config"]["queue_capacity"] == 8
+    names = {q["name"] for q in ipc["queues"]}
+    assert "agent-bus" in names
+    assert {s["name"] for s in ipc["segments"]} == {"shared-board"}
+    assert {p["name"] for p in ipc["pipes"]} == {"console-pipe"}
+    assert {m["name"] for m in ipc["mutexes"]} == {"log-lock"}
+    assert {s["name"] for s in ipc["semaphores"]} == {"worker-slots"}
+
+
+def test_ipc_queue_roundtrip_and_errors() -> None:
+    assert jvk_init({"boot": True}) == "ok"
+    assert jvk_command(
+        {"action": "ipc_queue_create", "queue": "q", "capacity": 2}
+    )["ok"]
+    assert jvk_command(
+        {"action": "ipc_queue_send", "queue": "q", "data": "hello"}
+    )["ok"]
+    got = jvk_command({"action": "ipc_queue_recv", "queue": "q"})
+    assert got["data"] == "hello" and got["bytes"] == 5
+    empty = jvk_command(
+        {"action": "ipc_queue_recv", "queue": "q", "nonblock": True}
+    )
+    assert empty["ok"] is False and "would block" in empty["error"]
+    missing = jvk_command({"action": "ipc_queue_send", "queue": "nope", "data": "x"})
+    assert missing["ok"] is False
+    assert jvk_snapshot()["ipc"]["stats"]["messages_sent"] == 1
+
+
+def test_ipc_blocked_sender_is_woken_when_slot_frees() -> None:
+    assert jvk_init({"boot": True}) == "ok"
+    a = jvk_command({"action": "create_process", "name": "a"})["pid"]
+    b = jvk_command({"action": "create_process", "name": "b"})["pid"]
+    jvk_command({"action": "ipc_queue_create", "queue": "q1", "capacity": 1})
+    jvk_command({"action": "ipc_queue_send", "queue": "q1", "pid": a, "data": "one"})
+    blocked = jvk_command(
+        {"action": "ipc_queue_send", "queue": "q1", "pid": b, "data": "two"}
+    )
+    assert blocked["blocked"] is True and blocked["state"] == "WAITING"
+    states = {p["pid"]: p["state"] for p in jvk_snapshot()["process_list"]}
+    assert states[b] == "WAITING"
+
+    assert jvk_command(
+        {"action": "ipc_queue_recv", "queue": "q1", "pid": a}
+    )["data"] == "one"
+    assert jvk_command(
+        {"action": "ipc_queue_recv", "queue": "q1", "pid": a}
+    )["data"] == "two"
+    ipc = jvk_snapshot()["ipc"]
+    assert ipc["stats"]["woken"] == 1
+    states = {p["pid"]: p["state"] for p in jvk_snapshot()["process_list"]}
+    assert states[b] == "READY"
+
+    # A system caller (pid 0) never blocks; a full queue is an error.
+    jvk_command({"action": "ipc_queue_send", "queue": "q1", "data": "x"})
+    full = jvk_command({"action": "ipc_queue_send", "queue": "q1", "data": "y"})
+    assert full["ok"] is False and full["error"] == "would block"
+
+
+def test_ipc_shared_memory_and_pipe() -> None:
+    assert jvk_init({"boot": True}) == "ok"
+    owner = jvk_command({"action": "create_process", "name": "owner"})["pid"]
+    reader = jvk_command({"action": "create_process", "name": "reader"})["pid"]
+    assert jvk_command(
+        {"action": "ipc_shm_create", "segment": "s", "pid": owner, "size": 64}
+    )["ok"]
+    assert jvk_command({"action": "ipc_shm_write", "segment": "s", "pid": owner,
+                        "data": "abc"})["bytes"] == 3
+    assert jvk_command({"action": "ipc_shm_attach", "segment": "s", "pid": reader})["ok"]
+    got = jvk_command({"action": "ipc_shm_read", "segment": "s", "pid": reader})
+    assert got["data"] == "abc"
+    denied = jvk_command({"action": "ipc_shm_read", "segment": "s", "pid": 999})
+    assert denied["ok"] is False
+
+    jvk_command({"action": "ipc_pipe_create", "pipe": "p", "pid": owner, "capacity": 64})
+    jvk_command({"action": "ipc_pipe_open", "pipe": "p", "pid": reader, "mode": "r"})
+    assert jvk_command({"action": "ipc_pipe_write", "pipe": "p", "pid": owner,
+                        "data": "ping"})["bytes"] == 4
+    assert jvk_command({"action": "ipc_pipe_read", "pipe": "p", "pid": reader,
+                        "max": 16})["data"] == "ping"
+
+
+def test_ipc_mutex_handoff_and_semaphore() -> None:
+    assert jvk_init({"boot": True}) == "ok"
+    a = jvk_command({"action": "create_process", "name": "a"})["pid"]
+    b = jvk_command({"action": "create_process", "name": "b"})["pid"]
+    jvk_command({"action": "ipc_mutex_create", "mutex": "m"})
+    assert jvk_command({"action": "ipc_mutex_lock", "mutex": "m", "pid": a})["ok"]
+    assert jvk_command({"action": "ipc_mutex_lock", "mutex": "m",
+                        "pid": b})["blocked"] is True
+    jvk_command({"action": "ipc_mutex_unlock", "mutex": "m", "pid": a})
+    mutex = next(m for m in jvk_snapshot()["ipc"]["mutexes"] if m["name"] == "m")
+    assert mutex["owner"] == b and mutex["contentions"] == 1
+    assert jvk_snapshot()["ipc"]["stats"]["woken"] == 1
+
+    jvk_command({"action": "ipc_sem_create", "semaphore": "s", "value": 1, "max": 2})
+    jvk_command({"action": "ipc_sem_wait", "semaphore": "s", "pid": b})
+    blocked = jvk_command({"action": "ipc_sem_wait", "semaphore": "s", "pid": a})
+    assert blocked["blocked"] is True
+    jvk_command({"action": "ipc_sem_post", "semaphore": "s", "pid": b})
+    sem = next(s for s in jvk_snapshot()["ipc"]["semaphores"] if s["name"] == "s")
+    assert sem["value"] == 0 and sem["holders"] == [a]
+
+
+def test_ipc_deadlock_detection_and_recovery() -> None:
+    assert jvk_init({"boot": True}) == "ok"
+    a = jvk_command({"action": "create_process", "name": "a"})["pid"]
+    b = jvk_command({"action": "create_process", "name": "b"})["pid"]
+    jvk_command({"action": "ipc_mutex_create", "mutex": "d1"})
+    jvk_command({"action": "ipc_mutex_create", "mutex": "d2"})
+    jvk_command({"action": "ipc_mutex_lock", "mutex": "d1", "pid": a})
+    jvk_command({"action": "ipc_mutex_lock", "mutex": "d2", "pid": b})
+    assert jvk_command({"action": "ipc_mutex_lock", "mutex": "d2",
+                        "pid": a})["blocked"] is True
+    assert jvk_command({"action": "ipc_mutex_lock", "mutex": "d1",
+                        "pid": b})["blocked"] is True
+
+    graph = jvk_command({"action": "ipc_deadlock"})
+    assert graph["deadlock"] is True and graph["cycle_count"] >= 1
+    assert {a, b} <= set(graph["cycles"][0])
+    snap = jvk_snapshot()["ipc"]
+    assert snap["wait_graph"]["active"] is True
+    assert snap["stats"]["deadlocks"] == 1
+
+    recovered = jvk_command({"action": "ipc_recover", "pid": b})
+    assert recovered["recovered"] == b
+    pids = {p["pid"] for p in jvk_snapshot()["process_list"]}
+    assert b not in pids and a in pids
+    assert jvk_command({"action": "ipc_deadlock"})["deadlock"] is False
+
+
+def test_ipc_errors_are_categorised() -> None:
+    assert jvk_init({"boot": True}) == "ok"
+    jvk_command({"action": "ipc_queue_recv", "queue": "agent-bus", "nonblock": True})
+    listing = jvk_command({"action": "list_interrupts"})
+    assert listing["error_manager"]["counts"]["ipc"] >= 1
+    bad = jvk_command({"action": "ipc_shm_write", "segment": "shared-board",
+                       "pid": 77, "data": "x"})
+    assert bad["ok"] is False and "no such process" in bad["error"]
+
+
+# ---- M8 shell ---------------------------------------------------------
+
+
+def test_shell_core_commands() -> None:
+    assert jvk_init({"boot": True}) == "ok"
+    help_out = jvk_command({"action": "shell_exec", "line": "help"})
+    assert help_out["ok"] is True and "JARVIS shell commands" in help_out["output"]
+    assert help_out["prompt"] == "jarvis@vos:/$ "
+
+    ps = jvk_command({"action": "shell_exec", "line": "ps"})
+    assert "PID" in ps["output"]
+
+    mem = jvk_command({"action": "shell_exec", "line": "mem"})
+    assert "frames" in mem["output"] and "allocator=" in mem["output"]
+
+    ipc = jvk_command({"action": "shell_exec", "line": "ipc"})
+    assert "agent-bus" in ipc["output"]
+
+    devices = jvk_command({"action": "shell_exec", "line": "devices"})
+    assert "DEVICE" in devices["output"]
+
+    bad = jvk_command({"action": "shell_exec", "line": "nonsense"})
+    assert bad["ok"] is False and "command not found" in bad["output"]
+
+
+def test_shell_filesystem_commands() -> None:
+    assert jvk_init({"boot": True}) == "ok"
+    assert jvk_command({"action": "shell_exec", "line": "mkdir /sh"})["ok"]
+    assert jvk_command(
+        {"action": "shell_exec", "line": "write-file /sh/a.txt hello world"}
+    )["ok"]
+    cat = jvk_command({"action": "shell_exec", "line": "cat /sh/a.txt"})
+    assert cat["output"].strip() == "hello world"
+    assert "a.txt" in jvk_command({"action": "shell_exec", "line": "ls /sh"})["output"]
+    assert jvk_command({"action": "shell_exec", "line": "cp /sh/a.txt /sh/b.txt"})["ok"]
+    assert jvk_command({"action": "shell_exec", "line": "mv /sh/b.txt /sh/c.txt"})["ok"]
+    assert jvk_command({"action": "shell_exec", "line": "rm /sh/c.txt"})["ok"]
+    assert jvk_command({"action": "shell_exec", "line": "cd /sh"})["cwd"] == "/sh"
+    assert jvk_command({"action": "shell_exec", "line": "pwd"})["output"].strip() == "/sh"
+    snap = jvk_snapshot()["shell"]
+    assert snap["cwd"] == "/sh" and snap["prompt"] == "jarvis@vos:/sh$ "
+
+
+def test_shell_process_and_ipc_commands() -> None:
+    assert jvk_init({"boot": True}) == "ok"
+    pid = jvk_command({"action": "create_process", "name": "worker", "burst": 4})["pid"]
+    ps = jvk_command({"action": "shell_exec", "line": "ps"})
+    assert "worker" in ps["output"]
+    alloc = jvk_command({"action": "shell_exec", "line": f"alloc {pid} 2"})
+    assert alloc["ok"] is True and "allocated 2 page" in alloc["output"]
+    assert jvk_command({"action": "shell_exec", "line": f"write {pid} 0 42"})["ok"]
+    got = jvk_command({"action": "shell_exec", "line": f"read {pid} 0"})
+    assert "= 42" in got["output"]
+
+    send = jvk_command({"action": "shell_exec", "line": "send agent-bus hello"})
+    assert send["ok"] is True
+    recv = jvk_command({"action": "shell_exec", "line": "recv agent-bus"})
+    assert recv["output"].strip() == "hello"
+
+    sched = jvk_command({"action": "shell_exec", "line": "sched"})
+    assert "algo=" in sched["output"]
+    tick = jvk_command({"action": "shell_exec", "line": "tick 3"})
+    assert tick["ok"] is True and "advanced 3 tick" in tick["output"]
+
+
+def test_shell_shutdown_action() -> None:
+    assert jvk_init({"boot": True}) == "ok"
+    out = jvk_command({"action": "shell_exec", "line": "shutdown"})
+    assert out["ok"] is True and out["exit"] is True
+    assert jvk_snapshot()["shutdown"] is True
+
+
+def test_config_includes_ipc_section() -> None:
+    with TestClient(app) as client:
+        body = client.get("/api/config").json()
+        assert body["ipc"]["queueCapacity"] == 8
+        assert body["ipc"]["seed"] is True
 
 
 def test_jvk_shutdown() -> None:

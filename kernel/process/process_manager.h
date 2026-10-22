@@ -42,8 +42,12 @@ int         pm_create(jvk_process_manager_t* pm, const char* name,
 int         pm_kill(jvk_process_manager_t* pm, int pid);
 int         pm_suspend(jvk_process_manager_t* pm, int pid);
 int         pm_resume(jvk_process_manager_t* pm, int pid);
+/* IPC blocking: READY/RUNNING -> WAITING and back. */
+int         pm_block(jvk_process_manager_t* pm, int pid);
+int         pm_wake(jvk_process_manager_t* pm, int pid);
 jvk_pcb_t*  pm_get(jvk_process_manager_t* pm, int pid);
 int         pm_next_ready(jvk_process_manager_t* pm); /* rotate ready, or -1 */
+int         pm_set_budget(jvk_process_manager_t* pm, int pid, int pages);
 const char* pm_state_name(jvk_proc_state_t state);
 
 #endif /* JARVIS_PROCESS_MANAGER_H */

@@ -14,33 +14,93 @@
 
 /* ---- registry ---------------------------------------------------------- */
 
-int kdev_boot(jvk_device_manager_t* dm)
+typedef struct {
+    jvk_device_id_t          id;
+    const char*              name;
+    const char*              driver;
+    jvk_irq_t                irq;
+    const jvk_driver_ops_t*  ops;
+    void*                    impl;
+} kdev_spec_t;
+
+static const kdev_spec_t KDEV_SPECS[JVK_DEV_COUNT] = {
+    { JVK_DEV_CPU,      "CPU",      "core",     JVK_IRQ_SOFTWARE,   NULL, NULL },
+    { JVK_DEV_RAM,      "RAM",      "core",     JVK_IRQ_PAGE_FAULT, NULL, NULL },
+    { JVK_DEV_DISK,     "Disk",     "disk",     JVK_IRQ_DISK,       NULL, NULL },
+    { JVK_DEV_KEYBOARD, "Keyboard", "keyboard", JVK_IRQ_KEYBOARD,   NULL, NULL },
+    { JVK_DEV_MOUSE,    "Mouse",    "mouse",    JVK_IRQ_KEYBOARD,   NULL, NULL },
+    { JVK_DEV_DISPLAY,  "Display",  "display",  JVK_IRQ_SOFTWARE,   NULL, NULL },
+    { JVK_DEV_PRINTER,  "Printer",  "printer",  JVK_IRQ_DISK,       NULL, NULL },
+    { JVK_DEV_CLOCK,    "Clock",    "clock",    JVK_IRQ_TIMER,      NULL, NULL },
+};
+
+static const jvk_driver_ops_t* spec_ops(jvk_device_id_t id)
+{
+    switch (id) {
+    case JVK_DEV_DISK:     return jvk_driver_disk_ops();
+    case JVK_DEV_KEYBOARD: return jvk_driver_keyboard_ops();
+    case JVK_DEV_MOUSE:    return jvk_driver_mouse_ops();
+    case JVK_DEV_DISPLAY:  return jvk_driver_display_ops();
+    case JVK_DEV_PRINTER:  return jvk_driver_printer_ops();
+    case JVK_DEV_CLOCK:    return jvk_driver_clock_ops();
+    default:               return NULL;
+    }
+}
+
+static void* spec_impl(jvk_device_id_t id)
+{
+    switch (id) {
+    case JVK_DEV_DISK:     return jvk_driver_disk_impl();
+    case JVK_DEV_KEYBOARD: return jvk_driver_keyboard_impl();
+    case JVK_DEV_MOUSE:    return jvk_driver_mouse_impl();
+    case JVK_DEV_DISPLAY:  return jvk_driver_display_impl();
+    case JVK_DEV_PRINTER:  return jvk_driver_printer_impl();
+    case JVK_DEV_CLOCK:    return jvk_driver_clock_impl();
+    default:               return NULL;
+    }
+}
+
+/* config/device.json: {"devices": {"keyboard": {"enabled": false,
+   "irq": "keyboard"}, ...}} — enables/disables a device and may rewire
+   its IRQ line. Unknown keys are ignored, never invented. */
+static void apply_device_config(jvk_device_manager_t* dm, const cJSON* cfg)
+{
+    if (!cJSON_IsObject(cfg)) {
+        return;
+    }
+    for (int i = 0; i < dm->count; i++) {
+        jvk_device_t* dev = &dm->devices[i];
+        const char* key = jvk_device_key(dev->id);
+        const cJSON* item = cJSON_GetObjectItemCaseSensitive(cfg, key);
+        if (!cJSON_IsObject(item)) {
+            continue;
+        }
+        const cJSON* irq_item = cJSON_GetObjectItemCaseSensitive(item, "irq");
+        jvk_irq_t irq;
+        if (cJSON_IsString(irq_item) && jvk_irq_parse(irq_item->valuestring, &irq)) {
+            dev->irq = (int)irq;
+        }
+        const cJSON* enabled = cJSON_GetObjectItemCaseSensitive(item, "enabled");
+        if (cJSON_IsBool(enabled) && !cJSON_IsTrue(enabled)) {
+            dm_set_power(dm, dev->id, 0);
+            dm_set_state(dm, dev->id, JVK_DEV_DISABLED);
+        }
+    }
+}
+
+int kdev_boot(jvk_device_manager_t* dm, const cJSON* config_root)
 {
     if (dm == NULL || !dm_init(dm)) {
         return 0;
     }
-    (void)dm_register(dm, JVK_DEV_CPU, "CPU", "core",
-                      JVK_IRQ_SOFTWARE, NULL, NULL);
-    (void)dm_register(dm, JVK_DEV_RAM, "RAM", "core",
-                      JVK_IRQ_PAGE_FAULT, NULL, NULL);
-    (void)dm_register(dm, JVK_DEV_DISK, "Disk", "disk",
-                      JVK_IRQ_DISK, jvk_driver_disk_ops(),
-                      jvk_driver_disk_impl());
-    (void)dm_register(dm, JVK_DEV_KEYBOARD, "Keyboard", "keyboard",
-                      JVK_IRQ_KEYBOARD, jvk_driver_keyboard_ops(),
-                      jvk_driver_keyboard_impl());
-    (void)dm_register(dm, JVK_DEV_MOUSE, "Mouse", "mouse",
-                      JVK_IRQ_KEYBOARD, jvk_driver_mouse_ops(),
-                      jvk_driver_mouse_impl());
-    (void)dm_register(dm, JVK_DEV_DISPLAY, "Display", "display",
-                      JVK_IRQ_SOFTWARE, jvk_driver_display_ops(),
-                      jvk_driver_display_impl());
-    (void)dm_register(dm, JVK_DEV_PRINTER, "Printer", "printer",
-                      JVK_IRQ_DISK, jvk_driver_printer_ops(),
-                      jvk_driver_printer_impl());
-    (void)dm_register(dm, JVK_DEV_CLOCK, "Clock", "clock",
-                      JVK_IRQ_TIMER, jvk_driver_clock_ops(),
-                      jvk_driver_clock_impl());
+    for (int i = 0; i < JVK_DEV_COUNT; i++) {
+        const kdev_spec_t* s = &KDEV_SPECS[i];
+        (void)dm_register(dm, s->id, s->name, s->driver, s->irq,
+                          spec_ops(s->id), spec_impl(s->id));
+    }
+    if (cJSON_IsObject(config_root)) {
+        apply_device_config(dm, cJSON_GetObjectItemCaseSensitive(config_root, "devices"));
+    }
     return dm->count == JVK_DEV_COUNT;
 }
 
@@ -195,6 +255,23 @@ static int handle_read(jvk_device_manager_t* dm, const cJSON* req,
     return 1;
 }
 
+static int handle_flush(jvk_device_manager_t* dm, const cJSON* req,
+                        cJSON* result)
+{
+    jvk_device_t* dev = find_device(dm, req);
+    if (dev == NULL) {
+        return fail_device(result, "unknown device");
+    }
+    int n = dm_flush(dm, dev->id);
+    if (n < 0) {
+        return fail_device(result, "device has no write buffer");
+    }
+    cJSON_AddBoolToObject(result, "ok", 1);
+    cJSON_AddStringToObject(result, "device", jvk_device_key(dev->id));
+    cJSON_AddNumberToObject(result, "flushed", n);
+    return 1;
+}
+
 static int handle_interrupt(jvk_device_manager_t* dm, const cJSON* req,
                             cJSON* result, jvk_ic_t* ic, unsigned long ticks)
 {
@@ -279,6 +356,9 @@ int kdev_handle(jvk_device_manager_t* dm, const char* action,
     }
     if (strcmp(action, "device_read") == 0) {
         return handle_read(dm, req, result);
+    }
+    if (strcmp(action, "device_flush") == 0) {
+        return handle_flush(dm, req, result);
     }
     if (strcmp(action, "device_interrupt") == 0) {
         return handle_interrupt(dm, req, result, ic, ticks);

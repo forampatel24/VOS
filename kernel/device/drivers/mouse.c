@@ -89,7 +89,7 @@ static void mouse_snapshot(const jvk_device_t* dev, cJSON* out)
 
 static const jvk_driver_ops_t g_mouse_ops = {
     mouse_init, mouse_shutdown, mouse_read, mouse_write,
-    mouse_interrupt, mouse_error, mouse_snapshot,
+    mouse_interrupt, mouse_error, mouse_snapshot, NULL,
 };
 
 const jvk_driver_ops_t* jvk_driver_mouse_ops(void)

@@ -1,0 +1,7 @@
+{
+  "filesystem": {
+    "blocks": 1024,
+    "blockSize": 4096
+  },
+  "_comment": "blocks x blockSize = virtual disk capacity (4096 bytes per block)"
+}

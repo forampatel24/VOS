@@ -43,6 +43,7 @@ const char* em_category_name(jvk_error_category_t cat)
     case JVK_ERR_SYSTEM:  return "system";
     case JVK_ERR_FILESYSTEM: return "filesystem";
     case JVK_ERR_DEVICE:  return "device";
+    case JVK_ERR_IPC:     return "ipc";
     default:              return "none";
     }
 }

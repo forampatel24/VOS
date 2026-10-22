@@ -11,7 +11,8 @@ const MENU: { id: WindowId; label: string; dot: string }[] = [
   { id: "files", label: "Files", dot: "bg-slate-400" },
   { id: "devices", label: "Devices", dot: "bg-slate-400" },
   { id: "interrupts", label: "IRQs", dot: "bg-slate-400" },
-  { id: "terminal", label: "Terminal", dot: "bg-slate-400" },
+  { id: "ipc", label: "IPC", dot: "bg-fuchsia-400" },
+  { id: "terminal", label: "Terminal", dot: "bg-cyan-400" },
 ];
 
 export default function Taskbar() {
@@ -44,7 +45,6 @@ export default function Taskbar() {
         {MENU.map((m) => {
           const w = windows[m.id];
           const isOpen = w.open;
-          const isOffline = ["terminal", "ipc"].includes(m.id);
           return (
             <button
               key={m.id}
@@ -52,11 +52,10 @@ export default function Taskbar() {
               className={`relative flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs mono tracking-wide transition ${
                 isOpen ? "bg-white/10 text-cyan-100" : "text-white/60 hover:bg-white/5 hover:text-white/90"
               }`}
-              title={isOffline ? "Subsystem offline — arrives in future milestone" : m.label}
+              title={m.label}
             >
-              <span className={`h-1.5 w-1.5 rounded-full ${isOffline ? "bg-slate-500" : m.dot} ${isOpen ? "shadow-[0_0_6px_currentColor]" : ""}`} />
+              <span className={`h-1.5 w-1.5 rounded-full ${m.dot} ${isOpen ? "shadow-[0_0_6px_currentColor]" : ""}`} />
               <span className="hidden md:inline">{m.label}</span>
-              {isOffline && <span className="hidden lg:inline text-[10px] opacity-40">offline</span>}
             </button>
           );
         })}

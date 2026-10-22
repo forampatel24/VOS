@@ -9,6 +9,8 @@ import EventLog from "@/components/windows/EventLog";
 import InterruptCenter from "@/components/windows/InterruptCenter";
 import FileExplorer from "@/components/windows/FileExplorer";
 import DeviceManager from "@/components/windows/DeviceManager";
+import IpcLab from "@/components/windows/IpcLab";
+import Terminal from "@/components/windows/Terminal";
 import Placeholder from "@/components/windows/Placeholder";
 
 export default function Desktop() {
@@ -31,6 +33,8 @@ export default function Desktop() {
           { id: "files", label: "Files", icon: "▤" },
           { id: "devices", label: "Devices", icon: "⏻" },
           { id: "interrupts", label: "Interrupts", icon: "⚡" },
+          { id: "ipc", label: "IPC Lab", icon: "⇄" },
+          { id: "terminal", label: "Terminal", icon: "▸" },
         ].map((item) => (
           <button
             key={item.id}
@@ -88,9 +92,14 @@ export default function Desktop() {
             <InterruptCenter />
           </Window>
         )}
+        {windows.ipc.open && !windows.ipc.minimized && (
+          <Window id="ipc" title="IPC & Sync Lab" onClose={() => close("ipc")}>
+            <IpcLab />
+          </Window>
+        )}
         {windows.terminal.open && !windows.terminal.minimized && (
           <Window id="terminal" title="Terminal" onClose={() => close("terminal")}>
-            <Placeholder title="Terminal" milestone="M8 — Shell & CLI" />
+            <Terminal />
           </Window>
         )}
         {windows.settings.open && !windows.settings.minimized && (

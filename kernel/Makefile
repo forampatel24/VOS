@@ -22,7 +22,7 @@ ifeq ($(UNAME_S),Linux)
   TARGET   = libjarvis_kernel.so
   IMPLIB   =
   LDFLAGS ?= 
-  TESTBINS = test_cpu test_process test_memory test_interrupts test_filesystem test_devices
+  TESTBINS = test_cpu test_process test_memory test_interrupts test_filesystem test_devices test_ipc test_shell test_system
 else
   CC      := ../.toolchain/gcc/bin/gcc.exe
   NASM    := ../.toolchain/nasm/nasm.exe
@@ -30,7 +30,7 @@ else
   TARGET   = jarvis_kernel.dll
   IMPLIB   = libjarvis_kernel.a
   LDFLAGS ?= -static-libgcc
-  TESTBINS = test_cpu.exe test_process.exe test_memory.exe test_interrupts.exe test_filesystem.exe test_devices.exe
+  TESTBINS = test_cpu.exe test_process.exe test_memory.exe test_interrupts.exe test_filesystem.exe test_devices.exe test_ipc.exe test_shell.exe test_system.exe
 endif
 CFLAGS  ?= -std=c17 -Wall -Wextra -O2
 ifeq ($(UNAME_S),Linux)
@@ -48,10 +48,23 @@ DEPSDIR  = deps/cJSON
 FSDIR    = filesystem
 DEVDIR   = device
 DRVDIR   = device/drivers
+MACHDIR  = machine
+IPCDIR   = ipc
+SHELLDIR = shell
 
 SRCS = $(SRCDIR)/kernel.c $(SRCDIR)/kernel_memory.c \
        $(SRCDIR)/kernel_fs.c $(SRCDIR)/kernel_fs_cmds.c \
        $(SRCDIR)/kernel_devices.c \
+       $(SRCDIR)/kernel_ipc.c $(SRCDIR)/kernel_ipc_cmds.c \
+       $(SRCDIR)/kernel_ipc_sync_cmds.c $(SRCDIR)/kernel_ipc_snapshot.c \
+       $(SRCDIR)/kernel_shell.c \
+       $(MACHDIR)/machine.c \
+       $(IPCDIR)/ipc_types.c $(IPCDIR)/ipc_manager.c $(IPCDIR)/ipc_queue.c \
+       $(IPCDIR)/ipc_shm.c $(IPCDIR)/ipc_pipe.c $(IPCDIR)/ipc_sync.c \
+       $(IPCDIR)/ipc_deadlock.c \
+       $(SHELLDIR)/shell_parse.c $(SHELLDIR)/shell_format.c \
+       $(SHELLDIR)/shell_cmds.c $(SHELLDIR)/shell_proc_cmds.c \
+       $(SHELLDIR)/shell_fs_cmds.c \
        $(CPUDIR)/alu.c $(CPUDIR)/clock.c $(CPUDIR)/cpu.c \
        $(SCHEDDIR)/scheduler.c \
        $(PROCDIR)/context_switch.c $(PROCDIR)/pid_gen.c \
@@ -119,6 +132,15 @@ test_filesystem test_filesystem.exe: tests/test_filesystem.c $(OBJS)
 
 test_devices test_devices.exe: tests/test_devices.c $(OBJS)
 	$(CC) $(CFLAGS) -I. tests/test_devices.c $(OBJS) $(LDFLAGS) -o $@
+
+test_ipc test_ipc.exe: tests/test_ipc.c $(OBJS)
+	$(CC) $(CFLAGS) -I. tests/test_ipc.c $(OBJS) $(LDFLAGS) -o $@
+
+test_shell test_shell.exe: tests/test_shell.c $(OBJS)
+	$(CC) $(CFLAGS) -I. tests/test_shell.c $(OBJS) $(LDFLAGS) -o $@
+
+test_system test_system.exe: tests/test_system.c $(OBJS)
+	$(CC) $(CFLAGS) -I. tests/test_system.c $(OBJS) $(LDFLAGS) -o $@
 
 clean:
 	rm -f $(OBJS) $(TARGET) $(IMPLIB) $(TESTBINS)

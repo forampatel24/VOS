@@ -113,7 +113,7 @@ static void display_snapshot(const jvk_device_t* dev, cJSON* out)
 
 static const jvk_driver_ops_t g_display_ops = {
     display_init, display_shutdown, display_read, display_write,
-    display_interrupt, display_error, display_snapshot,
+    display_interrupt, display_error, display_snapshot, NULL,
 };
 
 const jvk_driver_ops_t* jvk_driver_display_ops(void)

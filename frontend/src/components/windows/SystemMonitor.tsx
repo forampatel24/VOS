@@ -117,10 +117,70 @@ export default function SystemMonitor() {
             </div>
             <div className="flex justify-between">
               <span>Algorithm</span>
-              <span className="text-white">Round Robin</span>
+              <span className="text-white">{snap.scheduler.algo}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>CPU utilisation</span>
+              <span className="text-white">{(snap.scheduler.cpu_utilization * 100).toFixed(0)}%</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Avg wait / turnaround</span>
+              <span className="text-white">
+                {snap.scheduler.avg_wait.toFixed(1)} / {snap.scheduler.avg_turnaround.toFixed(1)} ticks
+              </span>
             </div>
             <div className="mono text-[10px] text-white/30 mt-2">Ready queue drives scheduling; context switches are real NASM saves.</div>
           </div>
+        </div>
+      </div>
+
+      {/* machine (M2) */}
+      <div className="rounded-lg border border-[#1e2a4a] bg-[#0d1225] p-3">
+        <div className="mono text-xs font-semibold tracking-widest text-amber-300 mb-2">
+          MACHINE — {snap.machine.board}
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mono text-xs text-white/70">
+          <div className="flex justify-between gap-2">
+            <span>Chipset</span>
+            <span className="text-white">{snap.machine.chipset}</span>
+          </div>
+          <div className="flex justify-between gap-2">
+            <span>Bus</span>
+            <span className="text-white">{snap.machine.bus} @ {snap.machine.bus_speed_mhz}MHz</span>
+          </div>
+          <div className="flex justify-between gap-2">
+            <span>BIOS</span>
+            <span className="text-white">{snap.machine.bios}</span>
+          </div>
+          <div className="flex justify-between gap-2">
+            <span>POST</span>
+            <span className={snap.machine.post_ok ? "text-emerald-300" : "text-red-300"}>
+              {snap.machine.post_ok ? "ok" : "failed"} · {snap.machine.power_on ? "powered" : "off"}
+            </span>
+          </div>
+          <div className="flex justify-between gap-2">
+            <span>Boot device</span>
+            <span className="text-white">{snap.machine.boot_device}</span>
+          </div>
+          <div className="flex justify-between gap-2">
+            <span>Cores</span>
+            <span className="text-white">{snap.machine.cpu_cores}</span>
+          </div>
+          <div className="flex justify-between gap-2">
+            <span>RAM frames</span>
+            <span className="text-white">{snap.machine.ram_frames}</span>
+          </div>
+          <div className="flex justify-between gap-2">
+            <span>Device slots</span>
+            <span className="text-white">{snap.machine.device_slots}</span>
+          </div>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-1 mono text-[10px]">
+          {snap.machine.slots.map((slot) => (
+            <span key={slot.name} className="rounded border border-[#1e2a4a] bg-[#141b34] px-2 py-0.5 text-white/60">
+              {slot.name} · {slot.kind} · {slot.detail}
+            </span>
+          ))}
         </div>
       </div>
 

@@ -79,6 +79,7 @@ const char* mm_status_name(mm_status_t s)
     case MM_ERR_NO_PID:  return "no address space for pid";
     case MM_ERR_OOM:     return "out of memory";
     case MM_ERR_SEGV:    return "segmentation fault";
+    case MM_ERR_BUDGET:  return "memory budget exceeded";
     default:             return "unknown error";
     }
 }

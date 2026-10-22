@@ -35,6 +35,15 @@ typedef struct {
     unsigned long    arrival[JVK_MAX_PROCS];
     char             names[JVK_MAX_PROCS][32];
     int              ctx_verified;   /* asm stub exercised at init */
+
+    /* M3a scheduling metrics: one sample per kernel tick. */
+    unsigned long    ticks;          /* ticks observed since init */
+    unsigned long    busy_ticks;     /* ticks with a runnable process running */
+    unsigned long    wait_ticks[JVK_MAX_PROCS]; /* ready but not selected */
+    unsigned long    run_ticks[JVK_MAX_PROCS];  /* actually executing */
+    unsigned long    wait_total;     /* accumulated wait of completed procs */
+    unsigned long    turnaround_total;
+    unsigned long    completed;      /* processes that left the system */
 } jvk_scheduler_t;
 
 void scheduler_init(jvk_scheduler_t* sched);
@@ -46,5 +55,14 @@ int  scheduler_set_ready(jvk_scheduler_t* sched, int pid, int ready);
 int  scheduler_set_algo(jvk_scheduler_t* sched, const char* name);
 const char* scheduler_algo_name(jvk_sched_algo_t algo);
 int  scheduler_schedule(jvk_scheduler_t* sched); /* selected pid, or -1 */
+
+/* Charge one tick to the scheduler: the running pid (or -1) executes,
+   every other ready process accumulates waiting time. */
+void scheduler_account(jvk_scheduler_t* sched, int running_pid);
+
+/* Derived metrics: CPU utilization 0..1, average wait and average
+   turnaround in ticks over completed processes. */
+void scheduler_metrics(const jvk_scheduler_t* sched, double* cpu_utilization,
+                       double* avg_wait, double* avg_turnaround);
 
 #endif /* JARVIS_SCHEDULER_H */

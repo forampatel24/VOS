@@ -70,6 +70,9 @@ export default function MemoryViewer() {
           <div className="text-white">{memory.config.allocator}</div>
           <div className="text-white/50">{memory.config.replacement}</div>
           <div className="text-cyan-300 text-[11px]">swap {memory.config.swap_enabled ? "on" : "off"} · {memory.swap_used}/{memory.config.swap_slots}</div>
+          <div className="text-white/30 text-[11px]">
+            {memory.config.page_table_strategy} · budget {memory.config.agent_budget_pages > 0 ? `${memory.config.agent_budget_pages} pg/agent` : "unlimited"}
+          </div>
         </div>
         <div className="rounded bg-[#141b34] border border-[#1e2a4a] p-2 mono text-xs">
           <div className="text-white/40 tracking-widest text-[10px]">FAULTS</div>
@@ -140,6 +143,7 @@ export default function MemoryViewer() {
             <div key={pt.pid} className="rounded border border-[#1e2a4a] bg-[#0d1225] p-2">
               <div className="mono text-xs font-semibold tracking-widest text-cyan-200 mb-1">
                 PID {pt.pid} — {pt.pages.length} page(s)
+                {pt.budget > 0 ? ` · budget ${pt.used}/${pt.budget} pg` : ""}
               </div>
               <div className="flex flex-wrap gap-1">
                 {pt.pages.map((pg) => (

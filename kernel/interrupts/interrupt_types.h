@@ -5,21 +5,23 @@
  *
  * Priority order (lower value = higher urgency):
  *   SHUTDOWN (0) > PAGE_FAULT (1) > DISK (2) > KEYBOARD (3)
- *   > TIMER (4) > SOFTWARE (5)
- * This models the textbook: faults and shutdown preempt periodic timers.
+ *   > TIMER (4) > SOFTWARE (5) > CONTEXT_SWITCH (6)
+ * This models the textbook: faults and shutdown preempt periodic timers,
+ * and a context switch is the lowest-urgency bookkeeping interrupt.
  */
 
 #ifndef JARVIS_INTERRUPT_TYPES_H
 #define JARVIS_INTERRUPT_TYPES_H
 
 typedef enum {
-    JVK_IRQ_SHUTDOWN    = 0,
-    JVK_IRQ_PAGE_FAULT  = 1,
-    JVK_IRQ_DISK        = 2,
-    JVK_IRQ_KEYBOARD    = 3,
-    JVK_IRQ_TIMER       = 4,
-    JVK_IRQ_SOFTWARE    = 5,
-    JVK_IRQ_COUNT       = 6,
+    JVK_IRQ_SHUTDOWN       = 0,
+    JVK_IRQ_PAGE_FAULT     = 1,
+    JVK_IRQ_DISK           = 2,
+    JVK_IRQ_KEYBOARD       = 3,
+    JVK_IRQ_TIMER          = 4,
+    JVK_IRQ_SOFTWARE       = 5,
+    JVK_IRQ_CONTEXT_SWITCH = 6,
+    JVK_IRQ_COUNT          = 7,
 } jvk_irq_t;
 
 typedef enum {

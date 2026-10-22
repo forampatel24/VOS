@@ -137,8 +137,9 @@ const char* jvk_irq_name(jvk_irq_t irq)
     case JVK_IRQ_DISK:       return "disk";
     case JVK_IRQ_KEYBOARD:   return "keyboard";
     case JVK_IRQ_TIMER:      return "timer";
-    case JVK_IRQ_SOFTWARE:   return "software";
-    default:                 return "unknown";
+    case JVK_IRQ_SOFTWARE:       return "software";
+    case JVK_IRQ_CONTEXT_SWITCH: return "context_switch";
+    default:                     return "unknown";
     }
 }
 

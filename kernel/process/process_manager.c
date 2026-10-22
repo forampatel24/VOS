@@ -133,6 +133,44 @@ jvk_pcb_t* pm_get(jvk_process_manager_t* pm, int pid)
     return find_pcb(pm, pid);
 }
 
+int pm_block(jvk_process_manager_t* pm, int pid)
+{
+    jvk_pcb_t* p = find_pcb(pm, pid);
+    if (p == NULL) {
+        return 0;
+    }
+    if (p->state != PROC_STATE_READY && p->state != PROC_STATE_RUNNING) {
+        return 0;
+    }
+    queue_remove(&pm->ready, pid);
+    queue_remove(&pm->suspended, pid);
+    p->state = PROC_STATE_WAITING;
+    queue_push(&pm->waiting, pid);
+    return 1;
+}
+
+int pm_wake(jvk_process_manager_t* pm, int pid)
+{
+    jvk_pcb_t* p = find_pcb(pm, pid);
+    if (p == NULL || p->state != PROC_STATE_WAITING) {
+        return 0;
+    }
+    queue_remove(&pm->waiting, pid);
+    p->state = PROC_STATE_READY;
+    queue_push(&pm->ready, pid);
+    return 1;
+}
+
+int pm_set_budget(jvk_process_manager_t* pm, int pid, int pages)
+{
+    jvk_pcb_t* p = find_pcb(pm, pid);
+    if (p == NULL || pages < 0) {
+        return 0;
+    }
+    p->mem_budget_pages = pages;
+    return 1;
+}
+
 int pm_next_ready(jvk_process_manager_t* pm)
 {
     if (pm->ready.count == 0) {

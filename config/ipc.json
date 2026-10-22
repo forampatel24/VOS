@@ -1,0 +1,8 @@
+{
+  "seed": true,
+  "queueCapacity": 8,
+  "pipeCapacity": 256,
+  "shmBytes": 128,
+  "semaphorePermits": 2,
+  "semaphoreMax": 4
+}

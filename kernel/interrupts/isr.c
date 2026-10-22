@@ -50,6 +50,13 @@ static void isr_software(jvk_ic_t* ic, const jvk_irq_entry_t* e, void* user)
     (void)user;
 }
 
+static void isr_context_switch(jvk_ic_t* ic, const jvk_irq_entry_t* e, void* user)
+{
+    (void)ic;
+    (void)e;
+    (void)user;
+}
+
 static void isr_shutdown(jvk_ic_t* ic, const jvk_irq_entry_t* e, void* user)
 {
     (void)user;
@@ -97,5 +104,6 @@ void isr_register_defaults(jvk_isr_registry_t* r)
     isr_register(r, JVK_IRQ_DISK,       isr_disk,       NULL);
     isr_register(r, JVK_IRQ_KEYBOARD,   isr_keyboard,   NULL);
     isr_register(r, JVK_IRQ_SOFTWARE,   isr_software,   NULL);
+    isr_register(r, JVK_IRQ_CONTEXT_SWITCH, isr_context_switch, NULL);
     isr_register(r, JVK_IRQ_SHUTDOWN,   isr_shutdown,   NULL);
 }

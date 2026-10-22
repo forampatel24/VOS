@@ -191,6 +191,23 @@ int dm_write(jvk_device_manager_t* dm, jvk_device_id_t id,
     return n;
 }
 
+int dm_flush(jvk_device_manager_t* dm, jvk_device_id_t id)
+{
+    jvk_device_t* dev = dm_get(dm, id);
+    if (dev == NULL || dev->ops == NULL || dev->ops->flush == NULL) {
+        return -1;
+    }
+    if (!device_usable(dev, 1)) {
+        return -1;
+    }
+    int n = dev->ops->flush(dev);
+    if (n > 0) {
+        dm_event(dm, "DEVICE_FLUSH device=%s blocks=%d",
+                 jvk_device_key(dev->id), n);
+    }
+    return n;
+}
+
 int dm_raise_interrupt(jvk_device_manager_t* dm, jvk_device_id_t id)
 {
     jvk_device_t* dev = dm_get(dm, id);

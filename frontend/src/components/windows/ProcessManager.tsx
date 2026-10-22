@@ -69,13 +69,14 @@ export default function ProcessManager() {
               <th className="text-left font-normal tracking-widest p-2">PRIO</th>
               <th className="text-left font-normal tracking-widest p-2">BT</th>
               <th className="text-left font-normal tracking-widest p-2">AT</th>
+              <th className="text-left font-normal tracking-widest p-2">MEM</th>
               <th className="text-right font-normal tracking-widest p-2">ACTIONS</th>
             </tr>
           </thead>
           <tbody>
             {snap.process_list.length === 0 ? (
               <tr>
-                <td colSpan={7} className="p-8 text-center text-white/30">
+                <td colSpan={8} className="p-8 text-center text-white/30">
                   No processes — create one to see the lifecycle (READY → SUSPENDED → TERMINATED)
                 </td>
               </tr>
@@ -102,6 +103,10 @@ export default function ProcessManager() {
                   <td className="p-2 text-white/70">{p.priority}</td>
                   <td className="p-2 text-white/60">{p.burst_time || "—"}</td>
                   <td className="p-2 text-white/40">{p.created_ticks}</td>
+                  <td className="p-2 text-white/60">
+                    {p.mem_pages}
+                    {p.mem_budget_pages > 0 ? ` / ${p.mem_budget_pages}` : ""} pg
+                  </td>
                   <td className="p-2">
                     <div className="flex justify-end gap-1">
                       <button

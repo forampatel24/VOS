@@ -101,6 +101,14 @@ static int reclaim_frames(jvk_memory_manager_t* mm, int need)
         return ft_free_count(&mm->ft) >= need ? 0 : need;
     }
     while (ft_free_count(&mm->ft) < need) {
+        /* When the clock policy is used together with the referenced-bit
+           policy disabled, no page is considered recently used: the
+           policy degenerates to FIFO, exactly as the textbook describes. */
+        if (mm->cfg.replacement == MM_REPLACE_CLOCK && !mm->cfg.referenced_bit) {
+            for (int i = 0; i < mm->ft.total; i++) {
+                mm->ft.frames[i].ref_bit = 0;
+            }
+        }
         int victim = rp_pick_victim(&mm->ft, mm->cfg.replacement,
                                     &mm->clock_hand);
         if (victim < 0) {
@@ -110,20 +118,29 @@ static int reclaim_frames(jvk_memory_manager_t* mm, int need)
         int         vpid  = f->owner_pid;
         int         vpage = f->vpage;
 
-        int slot = swap_put(&mm->swap, vpid, vpage, mm->data[victim]);
-        if (slot < 0) {
-            break; /* swap full: cannot free more frames */
-        }
         mm_pte_t* e = pt_entry(table_of(mm, vpid), vpage);
+        /* With dirty tracking enabled, a clean page needs no write-back
+           and is simply dropped. */
+        int slot = -1;
+        if (!mm->cfg.dirty_bit || (e != NULL && e->dirty)) {
+            slot = swap_put(&mm->swap, vpid, vpage, mm->data[victim]);
+            if (slot < 0) {
+                break; /* swap full: cannot free more frames */
+            }
+        }
         if (e != NULL) {
             e->present   = 0;
             e->frame     = -1;
             e->swap_slot = slot;
         }
         ft_mark_free(&mm->ft, victim);
-        mm->swap_outs++;
+        if (slot >= 0) {
+            mm->swap_outs++;
+            emit(mm, "SWAP_OUT pid=%d vpage=%d slot=%d", vpid, vpage, slot);
+        } else {
+            emit(mm, "FRAME_DROP pid=%d vpage=%d clean", vpid, vpage);
+        }
         emit(mm, "FRAME_RECLAIM frame=%d from_pid=%d", victim, vpid);
-        emit(mm, "SWAP_OUT pid=%d vpage=%d slot=%d", vpid, vpage, slot);
     }
     return ft_free_count(&mm->ft) >= need ? 0 : need;
 }
@@ -138,6 +155,19 @@ int mm_init(jvk_memory_manager_t* mm, const mm_config_t* cfg)
     }
     memset(mm, 0, sizeof(*mm));
     mm->cfg = *cfg;
+
+    /* Positional/minimal configs leave the policy fields empty: fall back
+       to the documented defaults (per-agent tables, all hint bits on). */
+    if (mm->cfg.page_table_strategy[0] == '\0') {
+        snprintf(mm->cfg.page_table_strategy,
+                 sizeof(mm->cfg.page_table_strategy), "%s", "per-agent");
+        mm->cfg.present_bit    = 1;
+        mm->cfg.referenced_bit = 1;
+    } else if (mm->cfg.present_bit == 0 && mm->cfg.referenced_bit == 0 &&
+               mm->cfg.dirty_bit == 0) {
+        mm->cfg.present_bit    = 1;
+        mm->cfg.referenced_bit = 1;
+    }
 
     ft_init(&mm->ft, cfg->total_frames);
     if (!swap_init(&mm->swap, cfg->swap_enabled, cfg->swap_slots)) {
@@ -155,6 +185,53 @@ int mm_init(jvk_memory_manager_t* mm, const mm_config_t* cfg)
         mm->pids[i] = 0;
     }
     return 1;
+}
+
+/* ---- per-agent budget -------------------------------------------------- */
+
+int mm_set_budget(jvk_memory_manager_t* mm, int pid, int pages)
+{
+    if (mm == NULL || pid <= 0 || pages < 0) {
+        return 0;
+    }
+    int slot = -1;
+    for (int i = 0; i < JVK_MM_MAX_PROCS; i++) {
+        if (mm->budget_pid[i] == pid) {
+            slot = i;
+            break;
+        }
+        if (slot < 0 && mm->budget_pid[i] == 0) {
+            slot = i;
+        }
+    }
+    if (slot < 0) {
+        return 0;
+    }
+    mm->budget_pid[slot]   = pages > 0 ? pid : 0;
+    mm->budget_pages[slot] = pages;
+    return 1;
+}
+
+int mm_budget_of(const jvk_memory_manager_t* mm, int pid)
+{
+    if (mm == NULL || pid <= 0) {
+        return 0;
+    }
+    for (int i = 0; i < JVK_MM_MAX_PROCS; i++) {
+        if (mm->budget_pid[i] == pid) {
+            return mm->budget_pages[i];
+        }
+    }
+    return mm->cfg.agent_budget_pages;
+}
+
+int mm_pages_of(const jvk_memory_manager_t* mm, int pid)
+{
+    if (mm == NULL || pid <= 0) {
+        return 0;
+    }
+    int idx = table_index(mm, pid);
+    return idx >= 0 ? mm->tables[idx].used_count : 0;
 }
 
 void mm_shutdown(jvk_memory_manager_t* mm)
@@ -211,6 +288,12 @@ mm_status_t mm_alloc(jvk_memory_manager_t* mm, int pid, int npages,
     }
     if (pt->used_count + npages > JVK_MM_PT_ENTRIES) {
         return MM_ERR_ARG;
+    }
+    int budget = mm_budget_of(mm, pid);
+    if (budget > 0 && pt->used_count + npages > budget) {
+        emit(mm, "MEM_BUDGET_DENIED pid=%d requested=%d used=%d budget=%d",
+             pid, npages, pt->used_count, budget);
+        return MM_ERR_BUDGET;
     }
 
     int frames[JVK_MM_PT_ENTRIES];
@@ -279,6 +362,7 @@ int mm_free_pid(jvk_memory_manager_t* mm, int pid)
     swap_release_pid(&mm->swap, pid);
     pt_clear(pt);
     mm->pids[idx] = 0;
+    mm_set_budget(mm, pid, 0); /* a dead agent keeps no budget */
     if (freed > 0) {
         mm->frees++;
         mm->pages_mapped -= freed;

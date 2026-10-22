@@ -1,9 +1,12 @@
 {
   "totalPages": 1024,
   "pageSize": "4KB",
+  "allocator": "first_fit",
   "replacementAlgorithm": "clock",
   "swapEnabled": true,
+  "swapSlots": 128,
   "swapPath": ".swap",
   "agentMemoryLimit": 64,
-  "_comment": "agentMemoryLimit is in MB per agent"
+  "agentBudgetPages": 64,
+  "_comment": "agentBudgetPages caps one agent's resident+swapped pages; agentMemoryLimit (MB) is the fallback when the page cap is absent"
 }

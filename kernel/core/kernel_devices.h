@@ -16,7 +16,7 @@
 #include "../interrupts/error_manager.h"
 #include "../interrupts/ic.h"
 
-int  kdev_boot(jvk_device_manager_t* dm);
+int  kdev_boot(jvk_device_manager_t* dm, const cJSON* config_root);
 
 int  kdev_handle(jvk_device_manager_t* dm, const char* action,
                  const cJSON* req, cJSON* result,

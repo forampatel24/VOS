@@ -1,0 +1,12 @@
+{
+  "machine": {
+    "board": "JVK-VB1",
+    "chipset": "JARVIS-VC1",
+    "bus": "VirtIO-Bus",
+    "bios": "JVK-BIOS 1.0",
+    "busSpeedMHz": 800,
+    "cpuCores": 1,
+    "bootDevice": "/dev/vdisk0"
+  },
+  "_comment": "identity of the virtual motherboard the kernel boots on"
+}

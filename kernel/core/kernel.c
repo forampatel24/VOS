@@ -38,7 +38,10 @@
 #include "interrupts/isr.h"
 #include "kernel_devices.h"
 #include "kernel_fs.h"
+#include "kernel_ipc.h"
 #include "kernel_memory.h"
+#include "kernel_shell.h"
+#include "machine/machine.h"
 #include "memory/memory_manager.h"
 #include "process/process_manager.h"
 #include "scheduler/scheduler.h"
@@ -71,8 +74,12 @@ static jvk_isr_registry_t    g_isr;
 static jvk_error_manager_t   g_em;
 static jvk_vfs_t             g_fs;
 static jvk_device_manager_t  g_dm;
+static jvk_machine_t         g_machine;
+static jvk_ipc_t             g_ipc;
+static kshell_t              g_ksh;
 static int           g_current_pid = -1;
 static int           g_cpu_halt_logged = 0;
+static unsigned long g_ctx_switches = 0;
 
 /* ---- logging --------------------------------------------------------- */
 
@@ -122,6 +129,18 @@ static void dev_event_trampoline(void* user, const char* message)
     jvk_log(message);
 }
 
+/* IPC subsystem events are already human-readable; deadlocks also raise
+   a software interrupt so the Interrupts window shows the detection. */
+static void ipc_event_trampoline(void* user, const char* message)
+{
+    (void)user;
+    jvk_log(message);
+    if (strncmp(message, "IPC_DEADLOCK", 12) == 0) {
+        const char* detail = message[12] == ' ' ? message + 13 : message;
+        ic_enqueue(&g_ic, JVK_IRQ_SOFTWARE, "ipc", detail, g_ticks);
+    }
+}
+
 /* Every hardware IRQ line is delivered to the devices sitting on it. */
 static void dev_isr_bridge(jvk_ic_t* ic, const jvk_irq_entry_t* entry, void* user)
 {
@@ -129,6 +148,49 @@ static void dev_isr_bridge(jvk_ic_t* ic, const jvk_irq_entry_t* entry, void* use
     if (entry != NULL) {
         kdev_deliver_irq((jvk_device_manager_t*)user, (int)entry->irq);
     }
+}
+
+/* ---- kill path (shared by kill_process and IPC recovery) -------------- */
+
+static int kernel_kill_process(int pid, int* freed_out, int* closed_out)
+{
+    if (!pm_kill(&g_pm, pid)) {
+        return 0;
+    }
+    scheduler_unregister(&g_sched, pid);
+    int freed = mm_free_pid(&g_mm, pid);
+    int closed = kfs_close_owner(&g_fs, pid);
+    ipc_release_pid(&g_ipc, pid, g_ticks);
+    char msg[JVK_LOG_LEN];
+    snprintf(msg, sizeof(msg), "PROCESS_KILLED pid=%d", pid);
+    jvk_log(msg);
+    if (freed_out != NULL) {
+        *freed_out = freed > 0 ? freed : 0;
+    }
+    if (closed_out != NULL) {
+        *closed_out = closed > 0 ? closed : 0;
+    }
+    return 1;
+}
+
+static void ipc_kill_hook(void* user, int pid)
+{
+    (void)user;
+    (void)kernel_kill_process(pid, NULL, NULL);
+}
+
+static kipc_ctx_t ipc_context(void)
+{
+    kipc_ctx_t ctx = {
+        .ipc = &g_ipc,
+        .pm = &g_pm,
+        .sched = &g_sched,
+        .em = &g_em,
+        .ic = &g_ic,
+        .kill = ipc_kill_hook,
+        .kill_user = NULL,
+    };
+    return ctx;
 }
 
 /* ---- JSON helpers ---------------------------------------------------- */
@@ -201,6 +263,8 @@ static void process_list_to_json(cJSON* arr, const jvk_process_manager_t* pm)
         cJSON_AddNumberToObject(item, "burst_time", p->burst_time);
         cJSON_AddNumberToObject(item, "created_ticks", (double)p->created_ticks);
         cJSON_AddNumberToObject(item, "cpu_used", p->cpu_used);
+        cJSON_AddNumberToObject(item, "mem_pages", mm_pages_of(&g_mm, p->pid));
+        cJSON_AddNumberToObject(item, "mem_budget_pages", p->mem_budget_pages);
         cJSON_AddItemToArray(arr, item);
     }
 }
@@ -243,6 +307,7 @@ const char* jvk_init(const char* config_json)
     if (g_booted) {
         vfs_shutdown(&g_fs);
         dm_shutdown(&g_dm);
+        kipc_shutdown(&g_ipc);
     }
 
     g_booted    = 1;
@@ -252,6 +317,7 @@ const char* jvk_init(const char* config_json)
     g_last_error[0] = '\0';
     g_current_pid = -1;
     g_cpu_halt_logged = 0;
+    g_ctx_switches = 0;
 
     cpu_init(&g_cpu);
     clock_init(&g_clock, speed_hz, quantum);
@@ -275,11 +341,25 @@ const char* jvk_init(const char* config_json)
         g_booted = 0;
         return fail("filesystem init failed");
     }
-    if (!kdev_boot(&g_dm)) {
+    if (!kdev_boot(&g_dm, root)) {
         cJSON_Delete(root);
         g_booted = 0;
         return fail("device manager init failed");
     }
+    if (!kipc_boot(&g_ipc, root)) {
+        cJSON_Delete(root);
+        g_booted = 0;
+        return fail("ipc manager init failed");
+    }
+    kipc_set_observer(&g_ipc, ipc_event_trampoline, NULL);
+    ksh_boot(&g_ksh);
+
+    /* M2 machine: the board the kernel just came up on. */
+    machine_init(&g_machine, root);
+    machine_set_resources(&g_machine, 1, (unsigned long)g_mm.cfg.total_frames,
+                          g_dm.count);
+    machine_power_on(&g_machine);
+
     kfs_seed(&g_fs, 0);
     vfs_set_observer(&g_fs, fs_event_trampoline, NULL);
     dm_set_observer(&g_dm, dev_event_trampoline, NULL);
@@ -290,6 +370,7 @@ const char* jvk_init(const char* config_json)
     isr_register(&g_isr, JVK_IRQ_KEYBOARD,   dev_isr_bridge, &g_dm);
     isr_register(&g_isr, JVK_IRQ_SOFTWARE,   dev_isr_bridge, &g_dm);
     isr_register(&g_isr, JVK_IRQ_PAGE_FAULT, dev_isr_bridge, &g_dm);
+    isr_register(&g_isr, JVK_IRQ_CONTEXT_SWITCH, dev_isr_bridge, &g_dm);
 
     cJSON_Delete(root);
 
@@ -304,6 +385,21 @@ const char* jvk_init(const char* config_json)
     jvk_log("process_manager: ready");
     jvk_log("memory_manager: ready");
     jvk_log("interrupt_controller: ready");
+    snprintf(msg, sizeof(msg), "machine: %s chipset=%s bus=%s@%dMHz boot=%s",
+             g_machine.board, g_machine.chipset, g_machine.bus,
+             g_machine.bus_speed_mhz, g_machine.boot_device);
+    jvk_log(msg);
+    snprintf(msg, sizeof(msg), "POST: %s cores=%d ram_frames=%lu slots=%d",
+             g_machine.post_ok ? "ok" : "failed", g_machine.cpu_cores,
+             g_machine.ram_frames, g_machine.device_slots);
+    jvk_log(msg);
+    snprintf(msg, sizeof(msg), "paging: tables=%s present_bit=%d dirty_bit=%d referenced_bit=%d",
+             g_mm.cfg.page_table_strategy, g_mm.cfg.present_bit,
+             g_mm.cfg.dirty_bit, g_mm.cfg.referenced_bit);
+    jvk_log(msg);
+    snprintf(msg, sizeof(msg), "memory budget: %d pages per agent%s",
+             g_mm.cfg.agent_budget_pages,
+             g_mm.cfg.agent_budget_pages > 0 ? "" : " (unlimited)");
     snprintf(msg, sizeof(msg),
              "memory: frames=%d allocator=%s replacement=%s swap=%s",
              g_mm.cfg.total_frames, mm_alloc_name(g_mm.cfg.allocator),
@@ -317,6 +413,18 @@ const char* jvk_init(const char* config_json)
     jvk_log(msg);
     snprintf(msg, sizeof(msg), "devices: registered=%d", g_dm.count);
     jvk_log(msg);
+    int ipc_objects = 0;
+    for (int i = 0; i < JVK_IPC_MAX_QUEUES; i++) ipc_objects += g_ipc.queues[i].used;
+    for (int i = 0; i < JVK_IPC_MAX_SEGMENTS; i++) ipc_objects += g_ipc.segments[i].used;
+    for (int i = 0; i < JVK_IPC_MAX_PIPES; i++) ipc_objects += g_ipc.pipes[i].used;
+    for (int i = 0; i < JVK_IPC_MAX_MUTEXES; i++) ipc_objects += g_ipc.mutexes[i].used;
+    for (int i = 0; i < JVK_IPC_MAX_SEMS; i++) ipc_objects += g_ipc.sems[i].used;
+    snprintf(msg, sizeof(msg),
+             "ipc: objects=%d queue_cap=%d pipe_cap=%d shm_bytes=%d",
+             ipc_objects, g_ipc.cfg_queue_capacity, g_ipc.cfg_pipe_capacity,
+             g_ipc.cfg_shm_bytes);
+    jvk_log(msg);
+    jvk_log("shell: ready");
 
     snprintf(g_init_buf, sizeof(g_init_buf), "ok");
     return g_init_buf;
@@ -405,15 +513,36 @@ const char* jvk_command(const char* action_json)
         int priority = cJSON_IsNumber(prio_item) ? (int)prio_item->valuedouble : 0;
         int burst    = cJSON_IsNumber(burst_item) ? (int)burst_item->valuedouble : 0;
         if (burst < 0) burst = 0;
+        /* M3b: an agent may declare its own memory budget (pages or MB). */
+        cJSON* pages_item = cJSON_GetObjectItemCaseSensitive(req, "mem_budget");
+        if (!cJSON_IsNumber(pages_item)) pages_item = cJSON_GetObjectItemCaseSensitive(req, "memBudget");
+        cJSON* mb_item = cJSON_GetObjectItemCaseSensitive(req, "mem_budget_mb");
+        if (!cJSON_IsNumber(mb_item)) mb_item = cJSON_GetObjectItemCaseSensitive(req, "memBudgetMB");
+        int budget_pages = 0;
+        if (cJSON_IsNumber(pages_item) && pages_item->valuedouble >= 0) {
+            budget_pages = (int)pages_item->valuedouble;
+        } else if (cJSON_IsNumber(mb_item) && mb_item->valuedouble > 0) {
+            budget_pages = (int)(mb_item->valuedouble * 256.0);
+        }
         int pid = 0;
         if (pm_create(&g_pm, name, priority, burst, g_ticks, &pid)) {
             scheduler_register_ex(&g_sched, pid, name, priority, burst, g_ticks);
+            if (budget_pages > 0) {
+                pm_set_budget(&g_pm, pid, budget_pages);
+                mm_set_budget(&g_mm, pid, budget_pages);
+            }
             char msg[JVK_LOG_LEN];
             snprintf(msg, sizeof(msg), "PROCESS_CREATED pid=%d name=%s", pid, name);
             jvk_log(msg);
+            if (budget_pages > 0) {
+                snprintf(msg, sizeof(msg), "MEM_BUDGET_SET pid=%d pages=%d", pid, budget_pages);
+                jvk_log(msg);
+            }
             cJSON_AddBoolToObject(result, "ok", 1);
             cJSON_AddNumberToObject(result, "pid", pid);
             cJSON_AddStringToObject(result, "name", name);
+            cJSON_AddNumberToObject(result, "mem_budget_pages",
+                                    mm_budget_of(&g_mm, pid));
         } else {
             cJSON_AddBoolToObject(result, "ok", 0);
             cJSON_AddStringToObject(result, "error", "process table full");
@@ -421,19 +550,13 @@ const char* jvk_command(const char* action_json)
     } else if (strcmp(action, "kill_process") == 0) {
         cJSON* pid_item = cJSON_GetObjectItemCaseSensitive(req, "pid");
         int pid = cJSON_IsNumber(pid_item) ? (int)pid_item->valuedouble : -1;
-        if (pm_kill(&g_pm, pid)) {
-            scheduler_unregister(&g_sched, pid);
-            int freed = mm_free_pid(&g_mm, pid);
-            int closed = kfs_close_owner(&g_fs, pid);
-            char msg[JVK_LOG_LEN];
-            snprintf(msg, sizeof(msg), "PROCESS_KILLED pid=%d", pid);
-            jvk_log(msg);
+        int freed = 0;
+        int closed = 0;
+        if (kernel_kill_process(pid, &freed, &closed)) {
             cJSON_AddBoolToObject(result, "ok", 1);
             cJSON_AddNumberToObject(result, "pid", pid);
-            cJSON_AddNumberToObject(result, "memory_pages_freed",
-                                    freed > 0 ? freed : 0);
-            cJSON_AddNumberToObject(result, "files_closed",
-                                    closed > 0 ? closed : 0);
+            cJSON_AddNumberToObject(result, "memory_pages_freed", freed);
+            cJSON_AddNumberToObject(result, "files_closed", closed);
         } else {
             cJSON_AddBoolToObject(result, "ok", 0);
             cJSON_AddStringToObject(result, "error", "process not found");
@@ -552,6 +675,13 @@ const char* jvk_command(const char* action_json)
         cJSON_AddStringToObject(result, "algo", scheduler_algo_name(g_sched.algo));
         cJSON_AddNumberToObject(result, "switches", g_sched.switches);
         cJSON_AddNumberToObject(result, "current", g_current_pid);
+        cJSON_AddNumberToObject(result, "context_switch_irqs", (double)g_ctx_switches);
+        double util = 0.0, avg_wait = 0.0, avg_turn = 0.0;
+        scheduler_metrics(&g_sched, &util, &avg_wait, &avg_turn);
+        cJSON_AddNumberToObject(result, "cpu_utilization", util);
+        cJSON_AddNumberToObject(result, "avg_wait", avg_wait);
+        cJSON_AddNumberToObject(result, "avg_turnaround", avg_turn);
+        cJSON_AddNumberToObject(result, "completed", (double)g_sched.completed);
         cJSON_AddBoolToObject(result, "ok", 1);
     } else if (strncmp(action, "fs_", 3) == 0) {
         if (!kfs_handle(&g_fs, action, req, result, g_ticks)) {
@@ -568,6 +698,37 @@ const char* jvk_command(const char* action_json)
             cJSON_AddBoolToObject(result, "ok", 0);
             cJSON_AddStringToObject(result, "error", "unknown action");
         }
+    } else if (strncmp(action, "ipc_", 4) == 0 ||
+               strcmp(action, "list_ipc") == 0) {
+        kipc_ctx_t ictx = ipc_context();
+        if (!kipc_handle(&ictx, action, req, result, g_ticks)) {
+            jvk_set_error("unknown action");
+            cJSON_AddBoolToObject(result, "ok", 0);
+            cJSON_AddStringToObject(result, "error", "unknown action");
+        }
+    } else if (strcmp(action, "shell_exec") == 0) {
+        (void)ksh_handle(&g_ksh, action, req, result);
+    } else if (strcmp(action, "list_memory") == 0) {
+        kmem_snapshot(&g_mm, result);
+        cJSON_AddBoolToObject(result, "ok", 1);
+    } else if (strcmp(action, "list_filesystem") == 0) {
+        kfs_snapshot(&g_fs, result);
+        cJSON_AddBoolToObject(result, "ok", 1);
+    } else if (strcmp(action, "tick") == 0) {
+        cJSON* count_item = cJSON_GetObjectItemCaseSensitive(req, "count");
+        int count = cJSON_IsNumber(count_item) ? (int)count_item->valuedouble : 1;
+        if (count < 1) count = 1;
+        if (count > 1000) count = 1000;
+        for (int i = 0; i < count && !g_shutdown; i++) {
+            jvk_tick();
+        }
+        cJSON_AddBoolToObject(result, "ok", 1);
+        cJSON_AddNumberToObject(result, "advanced", count);
+        cJSON_AddNumberToObject(result, "uptime_ticks", g_ticks);
+    } else if (strcmp(action, "shutdown") == 0) {
+        jvk_shutdown();
+        cJSON_AddBoolToObject(result, "ok", 1);
+        cJSON_AddBoolToObject(result, "shutdown", 1);
     } else {
         em_record(&g_em, JVK_ERR_CPU, "unknown action", &g_ic);
         jvk_set_error("unknown action");
@@ -589,7 +750,10 @@ void jvk_tick(void)
     g_ticks++;
     clock_tick(&g_clock);
 
+    int prev_pid = g_current_pid;
     int executed = cpu_run(&g_cpu, g_clock.quantum);
+    /* M3a: charge this tick to whoever held the CPU. */
+    scheduler_account(&g_sched, prev_pid);
 
     if (g_cpu.regs.halted && !g_cpu_halt_logged) {
         g_cpu_halt_logged = 1;
@@ -630,6 +794,15 @@ void jvk_tick(void)
     } else {
         int pid = scheduler_schedule(&g_sched);
         if (pid >= 0) {
+            /* M4: a switch between two live processes raises the
+               lowest-priority interrupt, exactly like a real kernel. */
+            if (prev_pid >= 0 && prev_pid != pid) {
+                char detail[48];
+                snprintf(detail, sizeof(detail), "pid %d -> %d", prev_pid, pid);
+                ic_enqueue(&g_ic, JVK_IRQ_CONTEXT_SWITCH, "scheduler", detail,
+                           g_ticks);
+                g_ctx_switches++;
+            }
             g_current_pid = pid;
             char msg[JVK_LOG_LEN];
             snprintf(msg, sizeof(msg), "SCHEDULE pid=%d algo=%s", pid, scheduler_algo_name(g_sched.algo));
@@ -647,6 +820,10 @@ void jvk_tick(void)
         snprintf(msg, sizeof(msg), "tick %lu", g_ticks);
         jvk_log(msg);
     }
+
+    /* M7: re-evaluate the wait-for graph every tick; the subsystem only
+       logs and counts when the deadlock signature actually changes. */
+    (void)kipc_check_deadlock(&g_ipc);
 }
 
 const char* jvk_snapshot(void)
@@ -662,6 +839,9 @@ const char* jvk_snapshot(void)
     em_snapshot(&g_em, root);
     kfs_snapshot(&g_fs, root);
     kdev_snapshot(&g_dm, root);
+    machine_snapshot(&g_machine, root);
+    kipc_snapshot(&g_ipc, root);
+    ksh_snapshot(&g_ksh, root);
 
     cJSON* sched = cJSON_CreateObject();
     cJSON_AddStringToObject(sched, "algo", scheduler_algo_name(g_sched.algo));
@@ -682,6 +862,13 @@ const char* jvk_snapshot(void)
         next_pid = scheduler_schedule(&copy);
     }
     cJSON_AddNumberToObject(sched, "next", next_pid);
+    double util = 0.0, avg_wait = 0.0, avg_turn = 0.0;
+    scheduler_metrics(&g_sched, &util, &avg_wait, &avg_turn);
+    cJSON_AddNumberToObject(sched, "cpu_utilization", util);
+    cJSON_AddNumberToObject(sched, "avg_wait", avg_wait);
+    cJSON_AddNumberToObject(sched, "avg_turnaround", avg_turn);
+    cJSON_AddNumberToObject(sched, "completed", (double)g_sched.completed);
+    cJSON_AddNumberToObject(sched, "context_switch_irqs", (double)g_ctx_switches);
     cJSON_AddItemToObject(root, "scheduler", sched);
 
     cJSON* proc_list = cJSON_CreateArray();
@@ -744,6 +931,7 @@ void jvk_shutdown(void)
 {
     if (g_booted && !g_shutdown) {
         jvk_log("kernel shutdown");
+        machine_power_off(&g_machine);
         g_shutdown = 1;
     }
 }

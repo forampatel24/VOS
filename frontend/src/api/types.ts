@@ -25,6 +25,8 @@ export interface ProcessEntry {
   burst_time: number;
   created_ticks: number;
   cpu_used: number;
+  mem_pages: number;
+  mem_budget_pages: number; // 0 = kernel default
 }
 
 export interface Queues {
@@ -54,6 +56,11 @@ export interface MemoryConfig {
   replacement: string;
   swap_enabled: boolean;
   swap_slots: number;
+  agent_budget_pages: number;
+  page_table_strategy: string;
+  present_bit: boolean;
+  dirty_bit: boolean;
+  referenced_bit: boolean;
 }
 
 export interface PageEntry {
@@ -66,6 +73,8 @@ export interface PageEntry {
 
 export interface PageTable {
   pid: number;
+  used: number;
+  budget: number;
   pages: PageEntry[];
 }
 
@@ -106,6 +115,35 @@ export interface SchedulerSnapshot {
   current: number;
   next: number;
   switches: number;
+  cpu_utilization: number; // 0..1
+  avg_wait: number; // ticks
+  avg_turnaround: number; // ticks
+  completed: number;
+  context_switch_irqs: number;
+}
+
+/* ---- M2 virtual machine / motherboard --------------------------------- */
+
+export interface MachineSlot {
+  name: string;
+  kind: string; // cpu | ram | device
+  detail: string;
+  populated: boolean;
+}
+
+export interface MachineSnapshot {
+  board: string;
+  chipset: string;
+  bus: string;
+  bios: string;
+  bus_speed_mhz: number;
+  boot_device: string;
+  power_on: boolean;
+  post_ok: boolean;
+  cpu_cores: number;
+  ram_frames: number;
+  device_slots: number;
+  slots: MachineSlot[];
 }
 
 /* ---- M5 virtual filesystem -------------------------------------------- */
@@ -215,14 +253,160 @@ export interface DevicesSnapshot {
   list: DeviceEntry[];
 }
 
+/* ---- M7 IPC & synchronization ----------------------------------------- */
+
+export interface IpcConfig {
+  queue_capacity: number;
+  pipe_capacity: number;
+  shm_bytes: number;
+}
+
+export interface IpcStats {
+  queues_created: number;
+  messages_sent: number;
+  messages_received: number;
+  messages_dropped: number;
+  segments_created: number;
+  shm_maps: number;
+  shm_writes: number;
+  shm_reads: number;
+  pipes_created: number;
+  pipe_reads: number;
+  pipe_writes: number;
+  pipe_bytes: number;
+  mutex_locks: number;
+  mutex_unlocks: number;
+  mutex_contentions: number;
+  sem_waits: number;
+  sem_posts: number;
+  sem_contentions: number;
+  blocked: number;
+  woken: number;
+  deadlocks: number;
+  recoveries: number;
+}
+
+export interface IpcQueue {
+  name: string;
+  owner: number;
+  capacity: number;
+  count: number;
+  sent: number;
+  received: number;
+  blocked_sends: number;
+  blocked_recvs: number;
+  senders: number[];
+  receivers: number[];
+}
+
+export interface IpcSegment {
+  name: string;
+  owner: number;
+  size: number;
+  length: number;
+  data: string;
+  maps: number;
+  writes: number;
+  reads: number;
+  attached: number[];
+}
+
+export interface IpcPipe {
+  name: string;
+  owner: number;
+  capacity: number;
+  count: number;
+  bytes_in: number;
+  bytes_out: number;
+  reads: number;
+  writes: number;
+  readers: number[];
+  writers: number[];
+  read_waiters: number[];
+  write_waiters: number[];
+}
+
+export interface IpcMutex {
+  name: string;
+  owner: number;
+  recursion: number;
+  locks: number;
+  unlocks: number;
+  contentions: number;
+  waiters: number[];
+}
+
+export interface IpcSemaphore {
+  name: string;
+  value: number;
+  max: number;
+  waits: number;
+  posts: number;
+  contentions: number;
+  holders: number[];
+  waiters: number[];
+}
+
+export interface IpcDelivery {
+  pid: number;
+  bytes: number;
+  data: string;
+}
+
+export interface IpcEdge {
+  pid: number;
+  target: number;
+  kind: string;
+  resource: string;
+}
+
+export interface IpcSnapshot {
+  config: IpcConfig;
+  stats: IpcStats;
+  queues: IpcQueue[];
+  segments: IpcSegment[];
+  pipes: IpcPipe[];
+  mutexes: IpcMutex[];
+  semaphores: IpcSemaphore[];
+  deliveries: IpcDelivery[];
+  wait_graph: {
+    edges: IpcEdge[];
+    cycles: number[][];
+    active: boolean;
+  };
+}
+
+/* ---- M8 shell ---------------------------------------------------------- */
+
+export interface ShellSnapshot {
+  cwd: string;
+  prompt: string;
+  last_status: number;
+  last_output: string;
+}
+
+export interface ShellExecResult {
+  ok: boolean;
+  output: string;
+  prompt: string;
+  cwd: string;
+  clear: boolean;
+  exit: boolean;
+  command: string;
+  error?: string;
+}
+
 export interface KernelSnapshot {
   booted: boolean;
   shutdown: boolean;
   uptime_ticks: number;
   processes: number;
+  machine: MachineSnapshot;
   memory: MemorySnapshot;
   filesystem: FilesystemSnapshot;
   devices: DevicesSnapshot;
+  ipc: IpcSnapshot;
+  shell: ShellSnapshot;
   interrupts: InterruptSnapshot;
   error_manager: ErrorManagerSnapshot;
   scheduler: SchedulerSnapshot;

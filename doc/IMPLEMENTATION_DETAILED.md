@@ -1,6 +1,6 @@
 # JARVIS OS — Detailed Implementation Handover
 
-**Version:** 1.1 · **Date:** 2026-10-21 · **Status:** M0 → M6 done, 8 live windows, 61 pytest + 6 C smokes — ready for midsem
+**Version:** 1.3 · **Date:** 2026-10-22 · **Status:** M0 → M8 complete, 10 live windows, 82 pytest + 9 C smokes — ready for midsem
 **Purpose:** Give a teammate (or an LLM) *everything* implemented, in minute detail, with no prior context. Hand this file to an LLM and it can answer any question about what exists, how it works, and how to run/demo it.
 
 ---
@@ -31,17 +31,24 @@ VOS/
 ├── AGENTS.md, README.md, doc/ (TEAM_OVERVIEW, FRONTEND_SPEC, ARCHITECTURE, etc.)
 ├── kernel/
 │   ├── abi.h (jvk_init, jvk_command, jvk_tick, jvk_snapshot, jvk_logs, jvk_shutdown, jvk_last_error)
-│   ├── core/kernel.c (dispatcher, 40+ actions, snapshot builder, 65KB buffer)
+│   ├── core/kernel.c (dispatcher, 80+ actions, snapshot builder, 65KB buffer)
 │   ├── core/kernel_memory.c (mem_* glue, snapshot)
+│   ├── core/kernel_ipc*.c (IPC dispatcher, sync commands, snapshot)
+│   ├── core/kernel_shell.c (shell ↔ kernel re-entry)
 │   ├── cpu/ (alu, clock, cpu, registers, instruction_set)
 │   ├── asm/context_switch.S + .h (NASM save/restore, verified at boot)
 │   ├── process/ (pcb, pid_gen, queues, context_switch, process_manager)
 │   ├── scheduler/ (RR/FCFS/SJF/Priority strategy)
+│   ├── machine/ (jvk_machine_t: board/chipset/bus/BIOS/POST/slots, machine_snapshot)
 │   ├── memory/ (mm_types, frame_table, page_table, alloc_strategy, replace_policy, swap, memory_manager)
+│   ├── filesystem/ (disk, fs_types, open_table, vfs, vfs_ops)
+│   ├── device/ (device_types, device_manager, drivers/{keyboard,mouse,display,printer,disk_driver,clock_driver})
 │   ├── interrupts/ (interrupt_types, ic, isr, error_manager)
+│   ├── ipc/ (ipc_types, ipc_manager, ipc_queue, ipc_shm, ipc_pipe, ipc_sync, ipc_deadlock)
+│   ├── shell/ (shell_parse, shell_cmds, shell_proc_cmds, shell_fs_cmds, shell_format)
 │   ├── deps/cJSON/
-│   └── tests/test_cpu.c, test_process.c, test_memory.c, test_interrupts.c
-├── backend/main.py (FastAPI + /ws) + services/kernel_loader.py (ctypes)
+│   └── tests/test_cpu.c, test_process.c, test_memory.c, test_interrupts.c, test_filesystem.c, test_devices.c, test_ipc.c, test_shell.c, test_system.c
+├── backend/main.py (FastAPI + /ws) + services/kernel_loader.py (ctypes) + services/config_loader.py
 ├── frontend/
 │   ├── electron/main.js (spawns uvicorn, waits /health, frameless window)
 │   ├── electron/preload.js (window.jarvis)
@@ -50,9 +57,9 @@ VOS/
 │       ├── api/types.ts + client.ts (typed REST + WS)
 │       ├── store/kernelStore.ts (Zustand, WS deltas) + windowStore.ts (WM)
 │       ├── components/BootScreen, desktop/Desktop, desktop/Taskbar, desktop/Window
-│       └── components/windows/ (SystemMonitor, ProcessManager, MemoryViewer, CpuScheduler, EventLog, InterruptCenter, FileExplorer, DeviceManager, Placeholder)
-├── config/clock.json, memory.json, scheduler.json, theme.json, voice.json, paging.json
-├── tests/python/test_abi.py (61 tests)
+│       └── components/windows/ (SystemMonitor, ProcessManager, MemoryViewer, CpuScheduler, EventLog, InterruptCenter, FileExplorer, DeviceManager, IpcLab, Terminal, Placeholder)
+├── config/machine.json, clock.json, memory.json, paging.json, scheduler.json, fs.json, device.json, ipc.json, theme.json, voice.json
+├── tests/python/test_abi.py (82 tests)
 └── .venv/ + frontend/node_modules/ (not committed)
 ```
 
@@ -72,30 +79,38 @@ void        jvk_shutdown(void)
 int         jvk_last_error(char* buf, size_t n)
 ```
 
-**`jvk_command` actions implemented (M0-M4.5):**
+**`jvk_command` actions implemented (M0-M8):**
 * `ping`, `echo`
 * `cpu_load_program {program:[u16]}`, `cpu_reset`, `cpu_step`
-* `create_process {name, priority, burst_time|burst|bt}`, `kill_process {pid}`, `suspend_process {pid}`, `resume_process {pid}`, `list_processes`
-* `mem_alloc {pid, pages}`, `mem_free {pid}`, `mem_read {pid, addr}`, `mem_write {pid, addr, value}`, `mem_config {allocator, replacement}`
+* `create_process {name, priority, burst_time|burst|bt, mem_budget|mem_budget_mb}`, `kill_process {pid}`, `suspend_process {pid}`, `resume_process {pid}`, `list_processes`
+* `mem_alloc {pid, pages}` (denied with "memory budget exceeded" when the agent's cap would be crossed), `mem_free {pid}`, `mem_read {pid, addr}`, `mem_write {pid, addr, value}`, `mem_config {allocator, replacement, agentBudgetPages, referencedBit}`
 * `trigger_interrupt {irq, source, detail}`, `list_interrupts`, `panic {reason}`, `clear_panic`
-* `scheduler_config {algo|algorithm: rr|round_robin|fcfs|sjf|priority}`, `list_scheduler`
+* `scheduler_config {algo|algorithm: rr|round_robin|fcfs|sjf|priority}`, `list_scheduler` (now includes metrics)
+* `fs_*` (15 actions, M5), `list_devices` / `device_set` / `device_write` / `device_read` / `device_flush` / `device_interrupt` / `device_fault` / `device_repair` (M6)
+* `ipc_queue_{create,send,recv,destroy}`, `ipc_shm_{create,attach,detach,write,read,destroy}`, `ipc_pipe_{create,open,close,write,read,destroy}`, `ipc_mutex_{create,lock,unlock,destroy}`, `ipc_sem_{create,wait,post,destroy}`, `ipc_deadlock`, `ipc_recover {pid}`, `list_ipc` (M7)
+* `shell_exec {line}` → `{ok, output, prompt, cwd, clear, exit, command}`, `list_memory`, `list_filesystem`, `tick {count}`, `shutdown` (M8)
 
 **`jvk_snapshot` top-level keys (all live, no hardcode):**
 ```json
 {
   "booted": true, "shutdown": false, "uptime_ticks": 123, "processes": 3,
+  "machine": {"board":"JVK-VB1","chipset":"JARVIS-VC1","bus":"VirtIO-Bus","bios":"JVK-BIOS 1.0","bus_speed_mhz":800,"boot_device":"/dev/vdisk0","power_on":true,"post_ok":true,"cpu_cores":1,"ram_frames":1024,"device_slots":8,"slots":[{"name":"CPU0","kind":"cpu","detail":"virtual core 0","populated":true},...]},
   "memory": {
-    "config": {"total_frames":256,"page_words":16,"allocator":"first_fit","replacement":"clock","swap_enabled":true,"swap_slots":128},
-    "stats": {"frames_used":6,"frames_free":250,"pages_mapped":6,"allocs":3,"frees":0,"page_faults":1,"swap_ins":1,"swap_outs":2,"segfaults":0,"fragmented_allocs":0},
+    "config": {"total_frames":1024,"page_words":16,"allocator":"first_fit","replacement":"clock","swap_enabled":true,"swap_slots":128,"agent_budget_pages":64,"page_table_strategy":"per-agent","present_bit":true,"dirty_bit":true,"referenced_bit":true},
+    "stats": {"frames_used":6,"frames_free":1018,"pages_mapped":6,"allocs":3,"frees":0,"page_faults":1,"swap_ins":1,"swap_outs":2,"segfaults":0,"fragmented_allocs":0},
     "swap_used": 1,
     "frame_map": [1,1,2,0,0,...],
-    "page_tables": [{"pid":1,"pages":[{"vpage":0,"frame":0,"present":true,"referenced":true,"dirty":false},...]}]
+    "page_tables": [{"pid":1,"used":2,"budget":64,"pages":[{"vpage":0,"frame":0,"present":true,"referenced":true,"dirty":false},...]}]
   },
-  "interrupts": {"pending":1,"handled":5,"dropped":0,"panic":false,"panic_reason":"","queue":[{"irq":"page_fault","priority":1,"source":"memory","detail":"pid=1 vpage=2","enqueued_ticks":42,"status":"PENDING"}]},
-  "error_manager": {"last_category":"none","last_message":"","counts":{"none":0,"memory":1,"process":0,"cpu":0,"system":0}},
-  "scheduler": {"algo":"round_robin","current":2,"next":3,"switches":12},
-  "process_list": [{"pid":1,"name":"alpha","state":"READY","priority":5,"burst_time":7,"created_ticks":8,"cpu_used":0},...],
+  "interrupts": {"pending":1,"handled":5,"dropped":0,"panic":false,"panic_reason":"","queue":[{"irq":"context_switch","priority":6,"source":"scheduler","detail":"pid 1 -> 2","enqueued_ticks":42,"status":"PENDING"}]},
+  "error_manager": {"last_category":"none","last_message":"","counts":{"none":0,"memory":1,"process":0,"cpu":0,"system":0,"filesystem":0,"device":0,"ipc":0}},
+  "scheduler": {"algo":"round_robin","current":2,"next":3,"switches":12,"cpu_utilization":0.83,"avg_wait":4.0,"avg_turnaround":9.5,"completed":1,"context_switch_irqs":7},
+  "process_list": [{"pid":1,"name":"alpha","state":"READY","priority":5,"burst_time":7,"created_ticks":8,"cpu_used":0,"mem_pages":2,"mem_budget_pages":64},...],
   "queues": {"ready":[1,2,3],"waiting":[],"suspended":[],"terminated":[]},
+  "filesystem": {"config":{...},"stats":{...},"disk":{...},"entries":[...],"open_files":[...]},
+  "devices": {"count":8,"stats":{...},"list":[{"key":"disk","info":{"transfers":2,"writes":2,"buffered":0,"buffer_blocks":8,"flushes":1}},...]},
+  "ipc": {"config":{"queue_capacity":8,"pipe_capacity":256,"shm_bytes":128},"stats":{...},"queues":[...],"segments":[...],"pipes":[...],"mutexes":[...],"semaphores":[...],"deliveries":[...],"wait_graph":{"edges":[],"cycles":[],"active":false}},
+  "shell": {"cwd":"/","prompt":"jarvis@vos:/$ ","last_status":0,"last_output":""},
   "cpu": {"pc":4,"sp":0,"ir":8208,"halted":false,"program_size":13,"registers":{"R0":10,"R1":5,...},"flags":{"Z":false,"N":false,"C":false}},
   "clock": {"speed_hz":1000,"quantum":10,"ticks":123}
 }
@@ -166,6 +181,23 @@ int         jvk_last_error(char* buf, size_t n)
 * **ABI:** `trigger_interrupt {irq, source, detail}`, `list_interrupts`, `panic {reason}`, `clear_panic`.
 * **Tick interval:** `backend/main.py` WS loop `send snapshot → wait 0.5s for client → jvk_tick → sleep 2.0` = ~2.5s per update so queue stays visible.
 
+## 9.5 IPC & Synchronization (M7)
+
+* **Subsystem:** `kernel/ipc/` is pure logic — no JSON, no process-manager or scheduler calls. It returns `JVK_IPC_BLOCKED` and buffers woken pids (`ipc_take_wakeups`); the kernel glue performs the actual `pm_block`/`pm_wake` and scheduler updates.
+* **Objects:** bounded message queues (default 8 messages), shared-memory segments (dedicated 512-byte-per-segment arena, `attach` required before read/write), named pipes (bounded byte ring, per-writer pending chunk), recursive mutexes with unlock handoff, counting semaphores with permit handoff.
+* **Blocking:** a sender blocks when full (message is held in the wait record and committed when a slot frees); a receiver blocks when empty and receives the next message through a per-pid delivery slot; pipe readers/writers, mutex waiters and semaphore waiters wake in FIFO order. `pid 0` is the system caller and never blocks (returns `would block`).
+* **Deadlock:** wait-for edges are built from mutex waiter→owner and semaphore waiter→holders; cycles are found with DFS and deduplicated by sorted pid set (signature guard prevents log spam). The kernel raises the `IPC_DEADLOCK` observer event and a software IRQ, logs the cycle, and `ipc_recover {pid}` releases that pid's objects, kills the process through the kernel kill hook, then re-runs detection.
+* **Seeding:** `config/ipc.json` (`seed`, capacities) creates `agent-bus` queue, `shared-board` segment, `console-pipe`, `log-lock` mutex and `worker-slots` semaphore at boot; boot log reports the configuration.
+* **Snapshot:** `ipc.config`, full `stats`, object arrays with waiters/owners/data, pending deliveries, and `wait_graph {edges,cycles,active}` (recomputed on every snapshot).
+* **Errors:** new `JVK_ERR_IPC` category (`"ipc"`) records failed IPC calls in the error manager.
+
+## 9.6 Shell & CLI (M8)
+
+* **Subsystem:** `kernel/shell/` owns the tokenizer (quotes), path normalisation (`.`/`..`, root clamp), output builder and command implementations. It does not access subsystems directly: a `sh_exec_fn` callback re-enters `jvk_command`, so every shell command is a real kernel request and reply.
+* **Commands:** `help, echo, clear, pwd, cd, version, whoami, exit, shutdown, ps, kill, suspend, resume, memory/mem, alloc, free, write, read, sched, tick, devices, ipc, send, recv, files, ls, mkdir, touch, cat, write-file, rm, mv, cp, chmod`. `kill`/`suspend`/`resume` accept a pid or a process name.
+* **Glue:** `kernel/core/kernel_shell.c` implements `shell_exec {line}` → `{ok, output, prompt, cwd, clear, exit, command}`; prompt is derived from cwd (`jarvis@vos:<cwd>$ `), `clear`/`exit` are flags for the terminal, and the last output/status live in the `shell` snapshot object.
+* **Kernel additions:** `list_memory`, `list_filesystem`, `tick {count}` and `shutdown` actions; `kill_process` and IPC recovery share one kill helper that frees process, scheduler, memory, files and IPC state.
+
 ---
 
 ## 10. Bridge (Backend)
@@ -196,8 +228,12 @@ int         jvk_last_error(char* buf, size_t n)
   * `CpuScheduler` — `PC/SP/IR/halted, R0-7, flags Z/N/C, program_size`, `STEP/RESET`, `SCHEDULER RR/FCFS/SJF/Priority` switch + `RUNNING: PID X / NEXT: PID Y / switches` + `ready` queue with `● running` / `← next` highlights.
   * `EventLog` — filter `all/PROCESS/MEMORY/PAGE_FAULT/SWAP/SCHEDULE/TIMER/CPU`, search, `follow` toggle, `index# message` stream.
   * `InterruptCenter` — `pending/handled/dropped/panic` stats, panic banner + `CLEAR`, queue table `IRQ/PRIO/SOURCE/DETAIL/TICKS/STATUS`, trigger buttons for 6 IRQs + `PANIC`, error-manager `last_category` + counts.
-  * `Placeholder` — honest `Subsystem offline — arrives in Mx` for Files, Devices, Terminal, Settings.
-* **Chrome:** `Desktop` (wallpaper + 6 desktop icons, double-click to open) + `Taskbar` (launcher, window buttons, `kernel live` dot + `procs/frames`, `TICK` button, clock, Electron window controls) + `BootScreen` (2.2s phases + click to skip, failsafe 3.5s) + `Window` (drag header, resize handle, Framer Motion enter/exit, focus → `z`).
+  * `FileExplorer` — recursive tree, create file/folder, editor + save (`fs_write`), rename, delete, chmod, search, open-file table, disk/inode stats.
+  * `DeviceManager` — 8 devices, per-driver I/O panel (keyboard inject/read, mouse move, display lines, printer spool, clock IRQ, disk status), power/fault/repair, counters straight from the snapshot.
+  * `IpcLab` — live queues/segments/pipes/mutexes/semaphores, blocked sender/receiver lists, wait-for graph with cycles, DETECT + RECOVER actions, and an operations console (`IpcOps`) for every IPC action with pid selection.
+  * `Terminal` — kernel shell: prompt/cwd from the `shell` snapshot, command history (↑/↓), ctrl+l clear, quick buttons, executes `shell_exec` for every line.
+  * `Placeholder` — honest `Subsystem offline — arrives in Mx` for Settings until M10b.
+* **Chrome:** `Desktop` (wallpaper + 10 desktop icons, double-click to open) + `Taskbar` (launcher, window buttons, `kernel live` dot + `procs/frames`, `TICK` button, clock, Electron window controls) + `BootScreen` (2.2s phases + click to skip, failsafe 3.5s) + `Window` (drag header, resize handle, Framer Motion enter/exit, focus → `z`).
 
 ---
 
@@ -217,18 +253,18 @@ pip install -r backend\requirements.txt
 # 2. kernel
 Set-Location kernel
 mingw32-make          # → jarvis_kernel.dll
-mingw32-make test     # 4/4 PASS
+mingw32-make test     # 9/9 PASS
 Set-Location ..
 
 # 3. frontend
 Set-Location frontend
 npm install           # 505 packages
 npx tsc --noEmit      # no output = pass
-npx vite build        # → dist/index.html + 360KB JS
+npx vite build        # → dist/index.html + 401KB JS
 Set-Location ..
 
 # 4. tests
-python -m pytest tests -q  # 40 passed
+python -m pytest tests -q  # 82 passed
 
 # 5. run (two terminals)
 # Terminal A:
@@ -252,21 +288,24 @@ Health: `http://127.0.0.1:8000/health`, WS: `ws://127.0.0.1:8000/ws`, Frontend: 
 6. `File Explorer` → open `/Users/Admin/Documents/welcome.txt` → edit + SAVE (kernel `fs_write`), create a folder/file, chmod read-only and watch the write fail, search "welcome"; the disk/inode counters update from `filesystem` snapshot.
 7. `Device Manager` → keyboard: inject + READ; display: write two lines; printer: queue 2 jobs then PRINT ONE (raises the disk IRQ and pops one job); clock: RAISE TIMER IRQ; inject a fault then repair; all counters are kernel statistics.
 8. `Event Log` filter `PROCESS/MEMORY/PAGE_FAULT/FS_/DEVICE_` to prove every number came from kernel.
+9. `System Monitor` → MACHINE panel shows the board/chipset/bus/BIOS/POST read from `config/machine.json`, plus live CPU utilisation / avg wait / avg turnaround; `Process Manager` MEM column shows each agent's `mem_pages / budget`; `Device Manager` disk → two writes stay `buffered`, FLUSH commits them.
+10. `IPC Lab` → queue `agent-bus` already seeded; create processes, send until a sender blocks (amber waiter), recv to wake it; write a shared segment and attach/read it; lock `log-lock` from two pids and watch handoff; create two mutexes and cross-lock them → `DETECT` shows the cycle and `RECOVER` kills one holder. Every stat comes from `ipc` in the snapshot.
+11. `Terminal` → `help`, `ps`, `ipc`, `files`, `mkdir /demo`, `write-file /demo/a.txt hello`, `cat`, then `send agent-bus hi` + `recv agent-bus`; `kill <name>`, `tick 3`, `shutdown` all run through the kernel.
 
 ---
 
 ## 14. What Is Still Offline (honest placeholders)
 
-* IPC, Shell/Terminal, Agent Hub/Studio, AI — windows exist but show `offline — arrives in M7/M8/...`. Their kernel modules and APIs will follow the same vertical-slice pattern (kernel + bridge + window goes live together).
+* Agent Hub/Studio, AI and Settings — windows show `offline — arrives in M9/M10b/...`. Their kernel modules and APIs will follow the same vertical-slice pattern (kernel + bridge + window goes live together).
 
 ---
 
 ## 15. Verification Evidence (as of this doc)
 
-* Ubuntu 24.04 WSL: `cd kernel && make clean && make && make test` → `libjarvis_kernel.so`, `PASS: cpu / process / memory / interrupts / filesystem / devices` (6/6)
-* `python -m pytest tests -q` → `61 passed` (19 M5 filesystem + 19 M6 devices + bridge/ABI)
-* `cd frontend && npm run typecheck && npm run build` → clean (471 modules)
-* Live `uvicorn` → `health ok`, `fs_create/fs_read`, `device_write/device_read`, `device_interrupt`, flat + nested command payloads, `WS` pushes `snapshot + logs` every 2.5s.
+* Ubuntu 24.04 WSL: `cd kernel && make clean && make && make test` → `libjarvis_kernel.so`, `PASS: cpu / process / memory / interrupts / filesystem / devices / ipc / shell / system` (9/9)
+* `python -m pytest tests -q` → `82 passed` (19 M5 filesystem + 19 M6 devices + 9 machine/metrics/budget/config tests + 12 M7 IPC + 4 M8 shell + bridge/ABI)
+* `cd frontend && npm run typecheck && npm run build` → clean (474 modules, 401KB JS / 22.8KB CSS)
+* Live `uvicorn` → `health ok`, `GET /api/config`, `fs_create/fs_read`, `device_write/device_read`, `device_flush`, `device_interrupt`, IPC queue/SHM/pipe/mutex/semaphore + deadlock recover, `shell_exec`, machine snapshot + budget denial, flat + nested command payloads, `WS` pushes `snapshot + logs` every 2.5s.
 
 ---
 

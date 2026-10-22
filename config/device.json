@@ -1,0 +1,11 @@
+{
+  "devices": {
+    "keyboard": { "enabled": true, "irq": "keyboard" },
+    "mouse": { "enabled": true, "irq": "keyboard" },
+    "display": { "enabled": true, "irq": "software" },
+    "printer": { "enabled": true, "irq": "disk" },
+    "disk": { "enabled": true, "irq": "disk" },
+    "clock": { "enabled": true, "irq": "timer" }
+  },
+  "_comment": "enabled=false powers a device off at boot; irq rewires its interrupt line"
+}

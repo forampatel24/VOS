@@ -70,7 +70,7 @@ static mm_pte_t* pte_of(jvk_memory_manager_t* mm, int pid, int vpage)
 static void test_read_write_roundtrip(void)
 {
     jvk_memory_manager_t mm;
-    mm_config_t cfg = {16, MM_ALLOC_FIRST_FIT, MM_REPLACE_CLOCK, 1, 8};
+    mm_config_t cfg = {16, MM_ALLOC_FIRST_FIT, MM_REPLACE_CLOCK, 1, 8, 0, "", 1, 0, 1};
     expect(mm_init(&mm, &cfg) == 1, "init 16-frame manager");
 
     mm_set_observer(&mm, capture, NULL);
@@ -104,7 +104,7 @@ static void test_read_write_roundtrip(void)
 static void test_protection_errors(void)
 {
     jvk_memory_manager_t mm;
-    mm_config_t cfg = {8, MM_ALLOC_FIRST_FIT, MM_REPLACE_CLOCK, 1, 4};
+    mm_config_t cfg = {8, MM_ALLOC_FIRST_FIT, MM_REPLACE_CLOCK, 1, 4, 0, "", 1, 0, 1};
     mm_init(&mm, &cfg);
     mm_set_observer(&mm, capture, NULL);
 
@@ -143,7 +143,7 @@ static void test_fit_strategies_disagree(void)
 
     for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
         jvk_memory_manager_t mm;
-        mm_config_t cfg = {8, cases[c].strat, MM_REPLACE_CLOCK, 0, 0};
+        mm_config_t cfg = {8, cases[c].strat, MM_REPLACE_CLOCK, 0, 0, 0, "", 1, 0, 1};
         mm_init(&mm, &cfg);
 
         mm_alloc_result_t ra, rb, rc;
@@ -168,7 +168,7 @@ static void test_fit_strategies_disagree(void)
 static void test_scattered_fallback(void)
 {
     jvk_memory_manager_t mm;
-    mm_config_t cfg = {8, MM_ALLOC_FIRST_FIT, MM_REPLACE_CLOCK, 0, 0};
+    mm_config_t cfg = {8, MM_ALLOC_FIRST_FIT, MM_REPLACE_CLOCK, 0, 0, 0, "", 1, 0, 1};
     mm_init(&mm, &cfg);
     mm_set_observer(&mm, capture, NULL);
 
@@ -196,7 +196,7 @@ static void test_scattered_fallback(void)
 static void test_swap_preserves_data(void)
 {
     jvk_memory_manager_t mm;
-    mm_config_t cfg = {4, MM_ALLOC_FIRST_FIT, MM_REPLACE_CLOCK, 1, 8};
+    mm_config_t cfg = {4, MM_ALLOC_FIRST_FIT, MM_REPLACE_CLOCK, 1, 8, 0, "", 1, 0, 1};
     mm_init(&mm, &cfg);
     mm_set_observer(&mm, capture, NULL);
 
@@ -247,7 +247,7 @@ static void test_fifo_vs_lru_victim(void)
 
     for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
         jvk_memory_manager_t mm;
-        mm_config_t cfg = {8, MM_ALLOC_FIRST_FIT, cases[c].policy, 1, 8};
+        mm_config_t cfg = {8, MM_ALLOC_FIRST_FIT, cases[c].policy, 1, 8, 0, "", 1, 0, 1};
         mm_init(&mm, &cfg);
 
         mm_alloc_result_t r;
@@ -274,7 +274,7 @@ static void test_fifo_vs_lru_victim(void)
 static void test_oom_without_swap(void)
 {
     jvk_memory_manager_t mm;
-    mm_config_t cfg = {4, MM_ALLOC_FIRST_FIT, MM_REPLACE_CLOCK, 0, 0};
+    mm_config_t cfg = {4, MM_ALLOC_FIRST_FIT, MM_REPLACE_CLOCK, 0, 0, 0, "", 1, 0, 1};
     mm_init(&mm, &cfg);
 
     mm_alloc_result_t r;
@@ -286,7 +286,7 @@ static void test_oom_without_swap(void)
 
     /* the per-process address-space cap is a separate limit */
     jvk_memory_manager_t big;
-    mm_config_t cfg2 = {128, MM_ALLOC_FIRST_FIT, MM_REPLACE_CLOCK, 0, 0};
+    mm_config_t cfg2 = {128, MM_ALLOC_FIRST_FIT, MM_REPLACE_CLOCK, 0, 0, 0, "", 1, 0, 1};
     mm_init(&big, &cfg2);
     expect(mm_alloc(&big, 1, JVK_MM_PT_ENTRIES, &r) == MM_OK,
            "fill whole address space (64 pages)");
@@ -298,7 +298,7 @@ static void test_oom_without_swap(void)
 static void test_runtime_strategy_switch(void)
 {
     jvk_memory_manager_t mm;
-    mm_config_t cfg = {8, MM_ALLOC_FIRST_FIT, MM_REPLACE_FIFO, 1, 4};
+    mm_config_t cfg = {8, MM_ALLOC_FIRST_FIT, MM_REPLACE_FIFO, 1, 4, 0, "", 1, 0, 1};
     mm_init(&mm, &cfg);
 
     expect(mm_set_allocator(&mm, "worst_fit") == 1, "switch allocator");

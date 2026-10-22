@@ -17,6 +17,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict
 
+from backend.services.config_loader import load_config
 from backend.services.kernel_loader import (
     jvk_command,
     jvk_init,
@@ -38,7 +39,8 @@ class CommandRequest(BaseModel):
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    result = jvk_init({"boot": True})
+    # config/*.json describe the virtual hardware the kernel boots on.
+    result = jvk_init(load_config())
     if result != "ok":
         raise RuntimeError(f"kernel failed to boot: {result}")
     yield
@@ -64,6 +66,11 @@ def health() -> dict:
 @app.get("/api/snapshot")
 def snapshot() -> dict:
     return jvk_snapshot()
+
+
+@app.get("/api/config")
+def config() -> dict:
+    return load_config()
 
 
 @app.post("/api/command")

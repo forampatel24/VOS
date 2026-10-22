@@ -1,6 +1,6 @@
 # JARVIS OS — Frontend Specification
 
-Version: 1.1
+Version: 1.2
 Date: 2026-08-29
 Status: **Adopted** — canonical visual/UX target for all frontend milestones (M11a onward) — *M11a + M4 + M4.5 live as of 2026-08-29*
 
@@ -79,29 +79,29 @@ Status legend: LIVE at mid-sem demo · PARTIAL at mid-sem · ARRIVES-WITH-MILEST
 | #  | Screen                       | Status | Backed by |
 | -- | ---------------------------- | ------ | -------------------------------------------- |
 | 1  | Boot Screen                  | M11a   | `/health`, uvicorn lifecycle |
-| 2  | Command Center               | M11a   | snapshot cpu/clock/processes/queues + `/ws` events |
+| 2  | Command Center / System Monitor | M11a   | snapshot cpu/clock/processes/queues + `machine` panel (M2) + scheduler metrics (M3a) + `/ws` events |
 | 3  | Agent Manager                | M9b    | agent registry (M9a) |
 | 4  | Agent Workspace              | M9b    | agent process + task pipeline (M9a) |
 | 5  | Create Agent                 | M9b    | Agent Studio → process creation (M9a) |
 | 6  | Agent Library                | M9b    | built-in + custom agents (M9a) |
-| 7  | Process Manager              | M11a   | **kernel done (M3a)** — PCBs, queues, lifecycle commands |
-| 8  | CPU & Scheduler              | **LIVE (M4.5)** | clock/quantum + RR/FCFS/SJF/Priority live, `RUNNING/NEXT` + switches |
-| 9  | Memory Manager               | M11a   | M3b (frames, page tables, faults) |
-| 10 | IPC & Synchronization        | M7     | msg queues, shared mem, pipes, mutex/sem |
+| 7  | Process Manager              | M11a   | **kernel done (M3a)** — PCBs, queues, lifecycle commands, MEM column (`mem_pages`/`mem_budget_pages`) |
+| 8  | CPU & Scheduler              | **LIVE (M4.5)** | clock/quantum + RR/FCFS/SJF/Priority live, `RUNNING/NEXT` + switches + CPU util/avg wait/avg turnaround |
+| 9  | Memory Manager               | M11a   | M3b (frames, page tables, faults, per-agent budgets + page-table policy) |
+| 10 | IPC & Synchronization        | **LIVE (M7)** | queues, shared memory, pipes, mutex/sem, wait-for graph + deadlock recovery |
 | 11 | File Explorer                | **LIVE (M5)** | virtual disk + inode tree, CRUD, permissions, open-file table |
-| 12 | I/O & Device Manager         | **LIVE (M6)** | 8 devices, driver states, I/O dispatch, fault/repair |
-| 13 | Spooling & Buffer Monitor    | **LIVE (M6)** | printer spool + keyboard/display buffers in Device Manager |
-| 14 | Interrupt Center             | **LIVE (M4)** | priority queue + panic + page-fault wiring, 6 IRQs + error manager |
+| 12 | I/O & Device Manager         | **LIVE (M6)** | 8 devices, driver states, I/O dispatch, fault/repair, disk buffer + flush |
+| 13 | Spooling & Buffer Monitor    | **LIVE (M6)** | printer spool + keyboard/display buffers + disk write-back buffer in Device Manager |
+| 14 | Interrupt Center             | **LIVE (M4)** | priority queue + panic + page-fault wiring, 7 IRQs (incl. `context_switch`) + error manager |
 | 15 | Kernel Monitor               | M11a*  | starts as live event stream; enriches every milestone |
 | 16 | System Logs                  | M11a   | `jvk_logs` (exists since M1); search/filter matures M10b |
-| 17 | Terminal / JARVIS Shell      | M8     | shell parser through `jvk_command` |
+| 17 | Terminal / JARVIS Shell      | **LIVE (M8)** | kernel shell (`shell_exec`), real prompt/cwd, history, proc/mem/fs/ipc commands |
 | 18 | Device/Hardware View         | **LIVE (M6)** | virtual hardware inventory in Device Manager |
 | 19 | System Settings              | M10b/M11b | config read/write endpoints over `config/*.json` |
 | 20 | System Information           | post-M11a | trivial snapshot extensions |
-| 21 | Shutdown / Restart Screen    | M8/M11b | `shutdown` command + Electron close sequence |
+| 21 | Shutdown / Restart Screen    | M8/M11b | `shutdown` action + terminal command live; Electron close sequence in M11b |
 
-**Mid-sem review shows 10 fully-live screens (1, 2, 7, 8, 9, 11, 12, 13, 14, 18) with the rest present
-in the menu, greyed as "subsystem offline" — as of 2026-10-21.**
+**Mid-sem review shows 12 fully-live screens (1, 2, 7, 8, 9, 10, 11, 12, 13, 14, 17, 18) with the rest present
+in the menu, greyed as "subsystem offline" — as of 2026-10-22.**
 
 ---
 
@@ -209,7 +209,7 @@ list, in-place text editor with save, readonly toggle, name search, disk/inode/o
 stats. Every row comes from `jvk_snapshot().filesystem`; all actions are `fs_*` kernel commands.
 Path: `React -> FastAPI -> Kernel -> VFS -> virtual disk blocks`.
 
-### 6.7 IPC & Synchronization (#10)
+### 6.7 IPC & Synchronization (#10) — LIVE (M7)
 
 ```
 FROM             TO               MESSAGE
@@ -220,7 +220,13 @@ MUTEX ProjectFile:      Coding=LOCKED  Research=WAITING
 SEMAPHORE FileAccess:   avail 0, waiting [PID 108, PID 112]
 ```
 
-Messages animate between processes; blocked/waiting processes listed from real queues.
+Implemented as the **IPC & Sync Lab**: live object lists for queues (`count/capacity`, blocked
+senders/receivers), shared-memory segments (`data`, maps, attached pids), pipes (readers/writers
++ waiters), mutexes (`owner`, recursion, contention, waiters) and semaphores (`value/max`,
+holders, waiters); a wait-for graph panel with edges + detected cycles and DETECT / RECOVER
+buttons; and an operations console for every `ipc_*` action with pid selection and nonblock
+toggle. Every value comes from `jvk_snapshot().ipc`; recovery kills the chosen process through
+the kernel.
 
 ### 6.8 I/O & Devices (#12) + Spooling Monitor (#13) + Hardware View (#18) — LIVE (M6)
 Device list with states (connected/busy/waiting/disconnected/fault/disabled); I/O request chain
@@ -228,31 +234,37 @@ visualized end-to-end: `Agent -> I/O request -> device -> waiting -> complete ->
 print/buffer queues from the spooler; virtual hardware inventory. Implemented in one window:
 8 devices with power/state controls, fault injection + repair, per-device driver panels
 (keyboard inject/read, mouse move, display buffer, printer spool + print-one IRQ, clock timer
-IRQ, disk status), plus cumulative read/write/IRQ/error counters.
+IRQ, disk status + write-back buffer with an explicit FLUSH action), plus cumulative
+read/write/flush/IRQ/error counters. The board identity shown in the System Monitor MACHINE
+panel (board/chipset/bus/BIOS/POST + slots) comes from the M2 machine model.
 
 ### 6.9 Interrupt Center (#14)
 
 ```
-IRQ   SOURCE     STATUS
-0     Timer      SERVICED
-1     Keyboard   SERVICED
-14    Disk       PENDING
+IRQ              SOURCE           STATUS
+page_fault (1)   Memory           SERVICED
+disk (2)         Device           SERVICED
+context_switch (6) Scheduler      SERVICED
 ```
 
 Live servicing sequence: interrupt -> save state -> ISR -> service -> restore -> continue.
 Demo controls generate test interrupts and watch the priority ordering handle them.
 
-### 6.10 Terminal (#17)
+### 6.10 Terminal (#17) — LIVE (M8)
 
 ```
-JARVIS > agents
-PID   NAME             STATE
-101   Coding Agent     RUNNING
-...
-JARVIS > kill 103
+jarvis@vos:/$ ps
+PID  NAME                 STATE      PRI  BURST  CPU  MEM
+1    worker               READY      5    4      0    0/64
+jarvis@vos:/$ kill worker
+kill pid=1 (worker)
 ```
 
-Commands incl.: agents, processes, memory, schedule rr, files, mkdir, ls, kill, help...
+Implemented as a kernel-backed terminal: prompt and cwd come from the `shell` snapshot,
+↑/↓ history, ctrl+l clear, quick-command buttons, and every line is sent as
+`shell_exec {line}`. Commands: `help, echo, clear, pwd, cd, version, whoami, exit, shutdown,
+ps, kill, suspend, resume, memory/mem, alloc, free, write, read, sched, tick, devices, ipc,
+send, recv, files, ls, mkdir, touch, cat, write-file, rm, mv, cp, chmod`.
 
 ### 6.11 System Logs (#16) + Kernel Monitor (#15)
 
@@ -284,8 +296,8 @@ From M4 onward **every kernel milestone ships its UI window in the same mileston
 | M4 Interrupts          | #14 |
 | M5 Filesystem          | #11 |
 | M6 Devices             | #12, #13, #18 |
-| M7 IPC                 | #10 |
-| M8 Shell               | #17, #21(command side) |
+| M7 IPC                 | #10 (IPC & Sync Lab) |
+| M8 Shell               | #17 (Terminal), #21 command side |
 | M9a/M9b Agents         | #3, #4, #5, #6 |
 | M10b API full          | #19 (settings persistence), mature #15/#16 |
 | M11b Desktop completion | login, snap/dock/search/tray/notifications, #20 |
@@ -294,16 +306,17 @@ From M4 onward **every kernel milestone ships its UI window in the same mileston
 
 1. **BLOCKED vs WAITING** — kernel enum uses `WAITING`; UI displays `BLOCKED`. Same concept,
    decided at the render layer (kernel rename optional during M3b).
-2. **CPU % truthfulness** — real value is 0 until agents execute on the vCPU (M9a).
-   Until then panels show idle/halt state honestly; no invented utilization numbers.
+2. **CPU % truthfulness** — the scheduler now reports real metrics (M3a: `cpu_utilization`,
+   `avg_wait`, `avg_turnaround`, `completed`, busy ticks) computed from actual scheduled quanta;
+   idle/halted states are still shown honestly, and no number is invented by the UI.
 3. **Memory units** — simulator counts pages/frames. Convention: `PAGE_SIZE = 4096 bytes`;
    UI derives KB/MB (`pages x 4 KB`). Total RAM displayed = configured frames x page size —
    never a hardcoded "4 GB".
 4. **PIDs** — kernel generates from 1; spec examples showing 101+ are cosmetic only.
 5. **Priority** — kernel stores integers; UI maps to LOW/MED/HIGH labels for display;
    priority input converts back on command.
-6. **Scheduling algorithm selection** — FCFS/RR/Priority radio becomes real only with the
-   scheduler-strategy implementation (post-M11a); until then RR is shown as a fixed fact.
+6. **Scheduling algorithm selection** — FCFS/RR/SJF/Priority is real as of M4.5
+   (`scheduler_config {algo}`), driven by the strategy pattern in the kernel.
 
 ## 9. Contingency
 

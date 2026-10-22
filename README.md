@@ -42,26 +42,30 @@ VOS/
 ├── AGENTS.md                   AI development guidelines (rules we follow)
 ├── backend/                    FastAPI bridge (ctypes → kernel)
 │   ├── main.py                 lifecycle: boot kernel, serve REST/WS (/health, /api/*, /ws)
-│   └── services/kernel_loader.py   ctypes bindings + jvk_* wrappers
-├── config/                     boot, scheduler, memory, paging, theme, voice, clock JSON
+│   └── services/
+│       ├── kernel_loader.py        ctypes bindings + jvk_* wrappers
+│       └── config_loader.py        merges config/*.json into the jvk_init payload
+├── config/                     boot JSON: machine, clock, memory, paging, scheduler, fs, device, ipc, theme, voice
 ├── doc/                        ARCHITECTURE, IMPLEMENTATION_PLAN, PROJECT_SPEC, TEAM_OVERVIEW, FRONTEND_SPEC
 ├── kernel/                     THE C KERNEL (builds jarvis_kernel.dll)
-│   ├── core/                   kernel.c + kernel_memory.c (dispatch, ABI)
+│   ├── core/                   kernel.c + kernel_memory.c + kernel_fs.c + kernel_devices.c + kernel_ipc*.c + kernel_shell.c
+│   ├── machine/                virtual motherboard model (board, POST, slots)
 │   ├── cpu/                    registers, ALU, clock, CPU simulator
 │   ├── asm/                    context_switch.S (NASM)
 │   ├── process/                PCB, PID gen, queues, lifecycle
-│   ├── scheduler/              RR/FCFS/SJF/Priority (strategy pattern)
-│   ├── memory/                 frames, page tables, MMU, alloc/replacement, swap
-│   ├── memory/                 frames, page tables, allocators, swap
+│   ├── scheduler/              RR/FCFS/SJF/Priority (strategy pattern) + per-tick metrics
+│   ├── memory/                 frames, page tables, MMU, alloc/replacement, swap, agent budgets
 │   ├── filesystem/             virtual disk, inodes, VFS, open-file table
 │   ├── device/                 device manager + 6 drivers (keyboard/mouse/display/printer/disk/clock)
-│   ├── interrupts/             priority queue, ISRs, error manager, panic
+│   ├── interrupts/             priority queue, ISRs (incl. context_switch), error manager, panic
+│   ├── ipc/                    queues, shared memory, pipes, mutex/semaphore, deadlock detection
+│   ├── shell/                  tokenizer, path resolver, proc/mem/fs/ipc commands
 │   ├── deps/cJSON/             vendored JSON library
-│   └── tests/                  C smoke tests (cpu, process, memory, interrupts, filesystem, devices)
+│   └── tests/                  C smoke tests (cpu, process, memory, interrupts, filesystem, devices, ipc, shell, system)
 ├── frontend/                   Electron + Vite + React + Tailwind + Zustand + Framer Motion
 │   ├── electron/               main.js (spawns backend) + preload.js
-│   └── src/                    8 live windows + taskbar + desktop
-├── tests/python/               pytest ABI + FastAPI tests (61 tests)
+│   └── src/                    10 live windows + taskbar + desktop
+├── tests/python/               pytest ABI + FastAPI tests (82 tests)
 └── .toolchain/                 local junctions to gcc / nasm (never committed)
 ```
 
@@ -84,12 +88,12 @@ make clean && make && make test
 mingw32-make && mingw32-make test
 ```
 
-Linux produces `libjarvis_kernel.so`; Windows produces `jarvis_kernel.dll` + `libjarvis_kernel.a`. The C smoke suite runs 6 binaries and must end with 6 PASS lines.
+Linux produces `libjarvis_kernel.so`; Windows produces `jarvis_kernel.dll` + `libjarvis_kernel.a`. The C smoke suite runs 9 binaries and must end with 9 PASS lines.
 
 ### 2. Run the bridge (FastAPI)
 ```bash
-python -m pytest tests -q        # 61 tests (ABI + API + FS + devices)
-python -m uvicorn backend.main:app --port 8000   # boots the kernel via ctypes
+python -m pytest tests -q        # 82 tests (ABI + API + FS + devices + machine/metrics/budgets + IPC + shell)
+python -m uvicorn backend.main:app --port 8000   # boots the kernel via ctypes + config/*.json
 ```
 
 On Ubuntu/WSL use the project venv and run from the repository root:
@@ -100,7 +104,7 @@ export PYTHONPATH=/mnt/d/Foram_TP/VOS
 python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
-Endpoints: `GET /health`, `GET /api/snapshot`, `POST /api/command` (flat `{"action": ..., ...}`), `GET /api/tick`, `GET /api/logs`, `WebSocket /ws` (live snapshot/logs, auto-tick every 2.5s).
+Endpoints: `GET /health`, `GET /api/snapshot`, `GET /api/config`, `POST /api/command` (flat `{"action": ..., ...}`), `GET /api/tick`, `GET /api/logs`, `WebSocket /ws` (live snapshot/logs, auto-tick every 2.5s).
 
 ### 3. Run the frontend (Electron + React)
 ```bash
@@ -125,10 +129,11 @@ Every launched agent is a real simulated process: PCB, PID, scheduling, virtual 
 
 | Phase | Milestones | Status |
 |---|---|---|
-| MVP | M0 Project Skeleton · M1 Toolchain & Kernel Build · M2 CPU & Clock | ✅ Completed |
-| MVP | M3a Process Manager · M3b Memory Manager · M11a Frontend Foundation (Electron) · M4 Interrupts & Errors · M4.5 Scheduler Strategy (RR/FCFS/SJF/Priority) | ✅ Completed |
-| MVP | M5 Virtual Filesystem & Disk · M6 Devices & Drivers | ✅ Completed — File Explorer + Device Manager live; 61 pytest + 6 C smokes |
-| MVP | M7 IPC · M8 Shell · M9a Agent Core · M9b Consoles & Tools · M10b API · M11b Desktop | ▶ Next: M7 IPC & Synchronization |
+| MVP | M0 Project Skeleton · M1 Toolchain & Kernel Build · M2 Machine & CPU/Clock | ✅ Completed — motherboard model (board/chipset/bus/BIOS/slots) from `config/machine.json` |
+| MVP | M3a Process Manager · M3b Memory Manager · M11a Frontend Foundation (Electron) · M4 Interrupts & Errors · M4.5 Scheduler Strategy (RR/FCFS/SJF/Priority) | ✅ Completed — scheduler metrics (CPU util / avg wait / avg turnaround), per-agent memory budgets, `context_switch` IRQ |
+| MVP | M5 Virtual Filesystem & Disk · M6 Devices & Drivers | ✅ Completed — File Explorer + Device Manager live; config-driven devices + disk write buffer; 70 pytest + 7 C smokes |
+| MVP | M7 IPC & Synchronization · M8 Shell & CLI | ✅ Completed — IPC Lab (queues, shared memory, pipes, mutex/semaphore, wait-for graph, deadlock recovery) and Terminal (kernel shell) live; 82 pytest + 9 C smokes |
+| MVP | M9a Agent Core · M9b Consoles & Tools · M10b API · M11b Desktop | ▶ Next: M9a Agent Core |
 | Post-MVP | M10a Voice · M12 AI & Gemini · M13 Testing/Packaging · M14 Docs/Release · M15 Future | ○ Pending |
 
 The MVP is the **clickable OS for AI agents**; voice and AI reasoning come after.
@@ -137,7 +142,7 @@ The MVP is the **clickable OS for AI agents**; voice and AI reasoning come after
 
 ## The Demo
 
-Boot → open Agent Hub → click an agent → watch its console open while the **System Monitor dashboard** shows its live registers, page tables, queue position, context switches and kernel events → open Task Manager to prove multiple agents run as real processes. Full script in `doc/TEAM_OVERVIEW.md`.
+Boot → open Agent Hub → click an agent → watch its console open while the **System Monitor dashboard** shows its live registers, page tables, queue position, context switches and kernel events → open Task Manager to prove multiple agents run as real processes. IPC Lab demonstrates blocked queues and deadlock recovery; the Terminal runs the same kernel commands. Full script in `doc/TEAM_OVERVIEW.md`.
 
 ---
 

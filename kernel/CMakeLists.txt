@@ -17,6 +17,24 @@ add_library(jarvis_kernel SHARED
     core/kernel_fs.c
     core/kernel_fs_cmds.c
     core/kernel_devices.c
+    core/kernel_ipc.c
+    core/kernel_ipc_cmds.c
+    core/kernel_ipc_sync_cmds.c
+    core/kernel_ipc_snapshot.c
+    core/kernel_shell.c
+    machine/machine.c
+    ipc/ipc_types.c
+    ipc/ipc_manager.c
+    ipc/ipc_queue.c
+    ipc/ipc_shm.c
+    ipc/ipc_pipe.c
+    ipc/ipc_sync.c
+    ipc/ipc_deadlock.c
+    shell/shell_parse.c
+    shell/shell_format.c
+    shell/shell_cmds.c
+    shell/shell_proc_cmds.c
+    shell/shell_fs_cmds.c
     cpu/alu.c
     cpu/clock.c
     cpu/cpu.c

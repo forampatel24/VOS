@@ -50,6 +50,7 @@ typedef enum {
     MM_ERR_NO_PID,       /* no address space for pid */
     MM_ERR_OOM,          /* out of memory (and swap cannot help) */
     MM_ERR_SEGV,         /* access to an unmapped address */
+    MM_ERR_BUDGET,       /* per-agent memory budget would be exceeded */
 } mm_status_t;
 
 const char* mm_status_name(mm_status_t s);

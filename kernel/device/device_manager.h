@@ -47,6 +47,9 @@ int  dm_set_power(jvk_device_manager_t* dm, jvk_device_id_t id, int on);
 int  dm_read(jvk_device_manager_t* dm, jvk_device_id_t id, char* out, int cap);
 int  dm_write(jvk_device_manager_t* dm, jvk_device_id_t id,
               const char* data, int len);
+/* Commit a driver's buffered writes. Returns bytes flushed, or -1 when the
+   device is unavailable or has no buffering. */
+int  dm_flush(jvk_device_manager_t* dm, jvk_device_id_t id);
 
 /* Device raises its own IRQ (counted + processed). Returns 1 if raised. */
 int  dm_raise_interrupt(jvk_device_manager_t* dm, jvk_device_id_t id);

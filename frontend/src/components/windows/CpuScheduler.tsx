@@ -119,12 +119,37 @@ export default function CpuScheduler() {
                 })
               )}
             </div>
-            {snap.scheduler && (
-              <div className="text-white/30 text-[10px]">switches {snap.scheduler.switches}</div>
-            )}
+          {snap.scheduler && (
+            <div className="grid grid-cols-2 gap-1.5">
+              <div className="rounded bg-[#141b34] border border-[#1e2a4a] px-2 py-1.5">
+                <div className="text-white/40 text-[10px] tracking-widest">CPU UTIL</div>
+                <div className="text-emerald-300 font-bold">
+                  {(snap.scheduler.cpu_utilization * 100).toFixed(0)}%
+                </div>
+              </div>
+              <div className="rounded bg-[#141b34] border border-[#1e2a4a] px-2 py-1.5">
+                <div className="text-white/40 text-[10px] tracking-widest">AVG WAIT</div>
+                <div className="text-white font-bold">{snap.scheduler.avg_wait.toFixed(1)} ticks</div>
+              </div>
+              <div className="rounded bg-[#141b34] border border-[#1e2a4a] px-2 py-1.5">
+                <div className="text-white/40 text-[10px] tracking-widest">AVG TURNAROUND</div>
+                <div className="text-white font-bold">{snap.scheduler.avg_turnaround.toFixed(1)} ticks</div>
+              </div>
+              <div className="rounded bg-[#141b34] border border-[#1e2a4a] px-2 py-1.5">
+                <div className="text-white/40 text-[10px] tracking-widest">COMPLETED</div>
+                <div className="text-white font-bold">{snap.scheduler.completed}</div>
+              </div>
+            </div>
+          )}
+          {snap.scheduler && (
+            <div className="text-white/30 text-[10px]">
+              switches {snap.scheduler.switches} · context-switch IRQs {snap.scheduler.context_switch_irqs}
+            </div>
+          )}
           </div>
           <div className="mono text-[10px] text-white/30">
-            Scheduling is real round-robin over the ready queue; algorithm switching arrives with the scheduler-strategy milestone.
+            Round-robin rotates the ready queue every quantum; FCFS/SJF/Priority select by the stored attributes.
+            Metrics above come from the kernel's per-tick accounting.
           </div>
         </div>
       </div>

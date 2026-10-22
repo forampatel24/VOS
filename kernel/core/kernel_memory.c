@@ -48,6 +48,34 @@ static void parse_memory_config(const cJSON* root, mm_config_t* cfg)
     if (cJSON_IsNumber(slots) && slots->valuedouble >= 0) {
         cfg->swap_slots = (int)slots->valuedouble;
     }
+    /* Per-agent budget: explicit page cap wins, else MB limit (4KB pages). */
+    cJSON* budget = cJSON_GetObjectItemCaseSensitive(mem, "agentBudgetPages");
+    if (cJSON_IsNumber(budget) && budget->valuedouble >= 0) {
+        cfg->agent_budget_pages = (int)budget->valuedouble;
+    } else {
+        cJSON* mb = cJSON_GetObjectItemCaseSensitive(mem, "agentMemoryLimit");
+        if (cJSON_IsNumber(mb) && mb->valuedouble >= 0) {
+            cfg->agent_budget_pages = (int)(mb->valuedouble * 256.0);
+        }
+    }
+    /* Paging policy (config/paging.json merged into "memory"). */
+    cJSON* strat = cJSON_GetObjectItemCaseSensitive(mem, "pageTableStrategy");
+    if (cJSON_IsString(strat)) {
+        snprintf(cfg->page_table_strategy, sizeof(cfg->page_table_strategy),
+                 "%s", strat->valuestring);
+    }
+    cJSON* present = cJSON_GetObjectItemCaseSensitive(mem, "presentBit");
+    if (cJSON_IsBool(present)) {
+        cfg->present_bit = cJSON_IsTrue(present) ? 1 : 0;
+    }
+    cJSON* dirty = cJSON_GetObjectItemCaseSensitive(mem, "dirtyBit");
+    if (cJSON_IsBool(dirty)) {
+        cfg->dirty_bit = cJSON_IsTrue(dirty) ? 1 : 0;
+    }
+    cJSON* ref = cJSON_GetObjectItemCaseSensitive(mem, "referencedBit");
+    if (cJSON_IsBool(ref)) {
+        cfg->referenced_bit = cJSON_IsTrue(ref) ? 1 : 0;
+    }
 }
 
 int kmem_boot(jvk_memory_manager_t* mm, const cJSON* config_root)
@@ -58,6 +86,11 @@ int kmem_boot(jvk_memory_manager_t* mm, const cJSON* config_root)
         .replacement  = MM_REPLACE_CLOCK,
         .swap_enabled = 1,
         .swap_slots   = KMEM_DEFAULT_SWAPSLOTS,
+        .agent_budget_pages = 0,
+        .page_table_strategy = "per-agent",
+        .present_bit = 1,
+        .dirty_bit = 0,
+        .referenced_bit = 1,
     };
     if (config_root != NULL) {
         parse_memory_config(config_root, &cfg);
@@ -177,12 +210,23 @@ int kmem_handle(jvk_memory_manager_t* mm, const char* action,
             cJSON_AddStringToObject(result, "error", "unknown replacement policy");
             return 1;
         }
+        const cJSON* budget =
+            cJSON_GetObjectItemCaseSensitive(req, "agentBudgetPages");
+        if (cJSON_IsNumber(budget) && budget->valuedouble >= 0) {
+            mm->cfg.agent_budget_pages = (int)budget->valuedouble;
+        }
+        const cJSON* ref = cJSON_GetObjectItemCaseSensitive(req, "referencedBit");
+        if (cJSON_IsBool(ref)) {
+            mm->cfg.referenced_bit = cJSON_IsTrue(ref) ? 1 : 0;
+        }
         cJSON_AddBoolToObject(result, "ok", 1);
         cJSON_AddStringToObject(result, "allocator",
                                 mm_alloc_name(mm->cfg.allocator));
         cJSON_AddStringToObject(result, "replacement",
                                 mm_replace_name(mm->cfg.replacement));
         cJSON_AddNumberToObject(result, "total_frames", mm->cfg.total_frames);
+        cJSON_AddNumberToObject(result, "agent_budget_pages",
+                                mm->cfg.agent_budget_pages);
         return 1;
     }
     return 0;
@@ -202,6 +246,11 @@ void kmem_snapshot(const jvk_memory_manager_t* mm, cJSON* root)
                             mm_replace_name(mm->cfg.replacement));
     cJSON_AddBoolToObject(cfg, "swap_enabled", mm->cfg.swap_enabled);
     cJSON_AddNumberToObject(cfg, "swap_slots", mm->cfg.swap_slots);
+    cJSON_AddNumberToObject(cfg, "agent_budget_pages", mm->cfg.agent_budget_pages);
+    cJSON_AddStringToObject(cfg, "page_table_strategy", mm->cfg.page_table_strategy);
+    cJSON_AddBoolToObject(cfg, "present_bit", mm->cfg.present_bit != 0);
+    cJSON_AddBoolToObject(cfg, "dirty_bit", mm->cfg.dirty_bit != 0);
+    cJSON_AddBoolToObject(cfg, "referenced_bit", mm->cfg.referenced_bit != 0);
     cJSON_AddItemToObject(mem, "config", cfg);
 
     cJSON* stats = cJSON_CreateObject();
@@ -234,6 +283,8 @@ void kmem_snapshot(const jvk_memory_manager_t* mm, cJSON* root)
         }
         cJSON* t = cJSON_CreateObject();
         cJSON_AddNumberToObject(t, "pid", mm->pids[i]);
+        cJSON_AddNumberToObject(t, "used", mm->tables[i].used_count);
+        cJSON_AddNumberToObject(t, "budget", mm_budget_of(mm, mm->pids[i]));
         cJSON* pages = cJSON_CreateArray();
         for (int v = 0; v < mm->tables[i].used_count; v++) {
             const mm_pte_t* e = &mm->tables[i].entries[v];
