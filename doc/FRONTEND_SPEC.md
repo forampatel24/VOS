@@ -80,10 +80,10 @@ Status legend: LIVE at mid-sem demo · PARTIAL at mid-sem · ARRIVES-WITH-MILEST
 | -- | ---------------------------- | ------ | -------------------------------------------- |
 | 1  | Boot Screen                  | M11a   | `/health`, uvicorn lifecycle |
 | 2  | Command Center / System Monitor | M11a   | snapshot cpu/clock/processes/queues + `machine` panel (M2) + scheduler metrics (M3a) + `/ws` events |
-| 3  | Agent Manager                | M9b    | agent registry (M9a) |
-| 4  | Agent Workspace              | M9b    | agent process + task pipeline (M9a) |
-| 5  | Create Agent                 | M9b    | Agent Studio → process creation (M9a) |
-| 6  | Agent Library                | M9b    | built-in + custom agents (M9a) |
+| 3  | Agent Manager                | **LIVE (M9b)** | Agent Hub: live registry, launch/stop, task queue + pipeline |
+| 4  | Agent Workspace              | **LIVE (M9b)** | Agent Console per pid: task dispatch, trace, report, queue/history, ticks |
+| 5  | Create Agent                 | **LIVE (M9b)** | Agent Studio form → SQLite profile → kernel registry → process launch |
+| 6  | Agent Library                | **LIVE (M9b)** | 9 built-in + custom agents in Agent Hub/Studio |
 | 7  | Process Manager              | M11a   | **kernel done (M3a)** — PCBs, queues, lifecycle commands, MEM column (`mem_pages`/`mem_budget_pages`) |
 | 8  | CPU & Scheduler              | **LIVE (M4.5)** | clock/quantum + RR/FCFS/SJF/Priority live, `RUNNING/NEXT` + switches + CPU util/avg wait/avg turnaround |
 | 9  | Memory Manager               | M11a   | M3b (frames, page tables, faults, per-agent budgets + page-table policy) |
@@ -100,8 +100,8 @@ Status legend: LIVE at mid-sem demo · PARTIAL at mid-sem · ARRIVES-WITH-MILEST
 | 20 | System Information           | post-M11a | trivial snapshot extensions |
 | 21 | Shutdown / Restart Screen    | M8/M11b | `shutdown` action + terminal command live; Electron close sequence in M11b |
 
-**Mid-sem review shows 12 fully-live screens (1, 2, 7, 8, 9, 10, 11, 12, 13, 14, 17, 18) with the rest present
-in the menu, greyed as "subsystem offline" — as of 2026-10-22.**
+**Mid-sem review shows 16 fully-live screens (1–14, 17, 18) plus the live Event Log/Kernel Monitor, with Settings,
+System Information and the Shutdown screen pending — as of 2026-10-23 (M9b complete).**
 
 ---
 
@@ -139,7 +139,7 @@ CPU              24%        <- real: instructions executed / clock budget per wi
 Memory           42%        <- real: frames allocated / total (M3b)
 Processes        18         <- real: live process count
 Running / Ready / Blocked / Suspended   <- real: queue lengths
-Active Agents    7/10       <- arrives M9
+Active Agents    7/10       <- live: agents.stats.live / config.max_live
 System Uptime    02:14:36   <- real: uptime_ticks
 Recent Events               <- real: /ws log stream
 - Coding Agent started
@@ -147,8 +147,9 @@ Recent Events               <- real: /ws log stream
 - Context switch
 ```
 
-Interactions: click agent -> workspace (M9); click process -> details; click CPU/memory ->
-respective screens; start/stop agents (M9). Before M9, agent tiles show offline state.
+Interactions: click agent -> workspace; click process -> details; click CPU/memory ->
+respective screens; launch/pause/resume/stop agents from Agent Hub. Taskbar shows the
+live agent count and every open console.
 
 ### 6.2 Agent Manager (#3)
 List of installed agents with PID, state, CPU%; actions START / PAUSE / RESUME / TERMINATE /

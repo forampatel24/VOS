@@ -1,5 +1,10 @@
 import axios from "axios";
-import type { KernelSnapshot, LogEntry } from "./types";
+import type {
+  AgentProfile,
+  AgentProfileInput,
+  KernelSnapshot,
+  LogEntry,
+} from "./types";
 
 const API_BASE = ""; // proxied via Vite to 127.0.0.1:8000
 
@@ -32,6 +37,30 @@ export async function sendCommand(payload: Record<string, unknown>) {
 export async function tick() {
   const res = await http.get("/api/tick");
   return res.data;
+}
+
+export async function fetchAgentProfiles(): Promise<AgentProfile[]> {
+  const res = await http.get("/api/agents");
+  return (res.data.profiles as AgentProfile[]) ?? [];
+}
+
+export async function createAgentProfile(
+  payload: AgentProfileInput
+): Promise<AgentProfile> {
+  const res = await http.post("/api/agents", payload);
+  return res.data.profile as AgentProfile;
+}
+
+export async function updateAgentProfile(
+  id: number,
+  payload: AgentProfileInput
+): Promise<AgentProfile> {
+  const res = await http.put(`/api/agents/${id}`, payload);
+  return res.data.profile as AgentProfile;
+}
+
+export async function deleteAgentProfile(id: number): Promise<void> {
+  await http.delete(`/api/agents/${id}`);
 }
 
 // WebSocket helper — single shared connection, auto-reconnect

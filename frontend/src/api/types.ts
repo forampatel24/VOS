@@ -396,6 +396,127 @@ export interface ShellExecResult {
   error?: string;
 }
 
+/* ---- M9 agents --------------------------------------------------------- */
+
+export interface AgentConfig {
+  max_definitions: number;
+  max_live: number;
+  max_tasks: number;
+  stage_plan: number;
+  stage_think: number;
+  stage_act: number;
+  stage_report: number;
+}
+
+export interface AgentStats {
+  definitions: number;
+  live: number;
+  launched: number;
+  tasks_queued: number;
+  tasks_done: number;
+  tasks_failed: number;
+  reports: number;
+}
+
+export interface AgentDefinition {
+  id: number;
+  key: string;
+  name: string;
+  role: string;
+  personality: string;
+  color: string;
+  icon: string;
+  builtin: boolean;
+  priority: number;
+  mem_pages: number;
+  running_pid: number;
+  tools: string[];
+}
+
+export interface AgentCurrentTask {
+  id: number;
+  title: string;
+  stage: string;
+  progress: number;
+  tool: string;
+}
+
+export interface AgentInstance {
+  pid: number;
+  def_id: number;
+  key: string;
+  name: string;
+  state: string;
+  activity: string;
+  priority: number;
+  mem_pages: number;
+  memory_growth: number;
+  cpu_ticks: number;
+  launched_ticks: number;
+  tasks_queued: number;
+  tasks_done: number;
+  tasks_failed: number;
+  active_tasks: number;
+  current_task: number;
+  current?: AgentCurrentTask;
+}
+
+export interface AgentTask {
+  id: number;
+  pid: number;
+  def_id: number;
+  agent_key: string;
+  agent: string;
+  title: string;
+  input: string;
+  stage: string;
+  progress: number;
+  tool: string;
+  plan: string;
+  thought: string;
+  action: string;
+  result: string;
+  report: string;
+  writes: number;
+  reads: number;
+  created_ticks: number;
+  started_ticks: number;
+  completed_ticks: number;
+}
+
+export interface AgentSnapshot {
+  config: AgentConfig;
+  stats: AgentStats;
+  definitions: AgentDefinition[];
+  instances: AgentInstance[];
+  tasks: AgentTask[];
+}
+
+export interface AgentProfile {
+  id: number;
+  key: string;
+  name: string;
+  role: string;
+  personality: string;
+  color: string;
+  icon: string;
+  tools: string[];
+  priority: number;
+  mem_pages: number;
+  builtin: false;
+}
+
+export interface AgentProfileInput {
+  name: string;
+  role: string;
+  personality: string;
+  color: string;
+  icon: string;
+  tools: string[];
+  priority: number;
+  mem_pages: number;
+}
+
 export interface KernelSnapshot {
   booted: boolean;
   shutdown: boolean;
@@ -406,6 +527,7 @@ export interface KernelSnapshot {
   filesystem: FilesystemSnapshot;
   devices: DevicesSnapshot;
   ipc: IpcSnapshot;
+  agents: AgentSnapshot;
   shell: ShellSnapshot;
   interrupts: InterruptSnapshot;
   error_manager: ErrorManagerSnapshot;

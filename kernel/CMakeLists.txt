@@ -22,7 +22,13 @@ add_library(jarvis_kernel SHARED
     core/kernel_ipc_sync_cmds.c
     core/kernel_ipc_snapshot.c
     core/kernel_shell.c
+    core/kernel_agents.c
+    core/kernel_agents_config.c
+    core/kernel_agent_effects.c
+    core/kernel_agents_snapshot.c
     machine/machine.c
+    agent/agent_registry.c
+    agent/agent_tasks.c
     ipc/ipc_types.c
     ipc/ipc_manager.c
     ipc/ipc_queue.c

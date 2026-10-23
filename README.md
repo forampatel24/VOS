@@ -42,10 +42,12 @@ VOS/
 ├── AGENTS.md                   AI development guidelines (rules we follow)
 ├── backend/                    FastAPI bridge (ctypes → kernel)
 │   ├── main.py                 lifecycle: boot kernel, serve REST/WS (/health, /api/*, /ws)
+│   ├── routers/agents.py           Agent Studio profiles REST (/api/agents)
 │   └── services/
 │       ├── kernel_loader.py        ctypes bindings + jvk_* wrappers
-│       └── config_loader.py        merges config/*.json into the jvk_init payload
-├── config/                     boot JSON: machine, clock, memory, paging, scheduler, fs, device, ipc, theme, voice
+│       ├── config_loader.py        merges config/*.json into the jvk_init payload
+│       └── agent_store.py          SQLite persistence for custom agent profiles
+├── config/                     boot JSON: machine, clock, memory, paging, scheduler, fs, device, ipc, agents, theme, voice
 ├── doc/                        ARCHITECTURE, IMPLEMENTATION_PLAN, PROJECT_SPEC, TEAM_OVERVIEW, FRONTEND_SPEC
 ├── kernel/                     THE C KERNEL (builds jarvis_kernel.dll)
 │   ├── core/                   kernel.c + kernel_memory.c + kernel_fs.c + kernel_devices.c + kernel_ipc*.c + kernel_shell.c
@@ -60,12 +62,13 @@ VOS/
 │   ├── interrupts/             priority queue, ISRs (incl. context_switch), error manager, panic
 │   ├── ipc/                    queues, shared memory, pipes, mutex/semaphore, deadlock detection
 │   ├── shell/                  tokenizer, path resolver, proc/mem/fs/ipc commands
+│   ├── agent/                  agent registry + Plan → Think → Act → Report task engine
 │   ├── deps/cJSON/             vendored JSON library
-│   └── tests/                  C smoke tests (cpu, process, memory, interrupts, filesystem, devices, ipc, shell, system)
+│   └── tests/                  C smoke tests (cpu, process, memory, interrupts, filesystem, devices, ipc, shell, system, agents)
 ├── frontend/                   Electron + Vite + React + Tailwind + Zustand + Framer Motion
 │   ├── electron/               main.js (spawns backend) + preload.js
-│   └── src/                    10 live windows + taskbar + desktop
-├── tests/python/               pytest ABI + FastAPI tests (82 tests)
+│   └── src/                    13 fixed windows + dynamic agent consoles + taskbar + desktop
+├── tests/python/               pytest ABI + FastAPI tests (90 tests)
 └── .toolchain/                 local junctions to gcc / nasm (never committed)
 ```
 
@@ -88,11 +91,11 @@ make clean && make && make test
 mingw32-make && mingw32-make test
 ```
 
-Linux produces `libjarvis_kernel.so`; Windows produces `jarvis_kernel.dll` + `libjarvis_kernel.a`. The C smoke suite runs 9 binaries and must end with 9 PASS lines.
+Linux produces `libjarvis_kernel.so`; Windows produces `jarvis_kernel.dll` + `libjarvis_kernel.a`. The C smoke suite runs 10 binaries and must end with 10 PASS lines.
 
 ### 2. Run the bridge (FastAPI)
 ```bash
-python -m pytest tests -q        # 82 tests (ABI + API + FS + devices + machine/metrics/budgets + IPC + shell)
+python -m pytest tests -q        # 90 tests (ABI + API + FS + devices + machine/metrics/budgets + IPC + shell + agents)
 python -m uvicorn backend.main:app --port 8000   # boots the kernel via ctypes + config/*.json
 ```
 
@@ -104,7 +107,7 @@ export PYTHONPATH=/mnt/d/Foram_TP/VOS
 python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
-Endpoints: `GET /health`, `GET /api/snapshot`, `GET /api/config`, `POST /api/command` (flat `{"action": ..., ...}`), `GET /api/tick`, `GET /api/logs`, `WebSocket /ws` (live snapshot/logs, auto-tick every 2.5s).
+Endpoints: `GET /health`, `GET /api/snapshot`, `GET /api/config`, `POST /api/command` (flat `{"action": ..., ...}`), `GET /api/tick`, `GET /api/logs`, `GET|POST /api/agents`, `PUT|DELETE /api/agents/{id}`, `WebSocket /ws` (live snapshot/logs, auto-tick every 2.5s).
 
 ### 3. Run the frontend (Electron + React)
 ```bash
@@ -121,7 +124,7 @@ npm run dev
 
 **9 built-in agents:** Finance · Coding · Research · Writing · HR · Legal · Marketing · Travel · Health — plus unlimited user-created agents via Agent Studio.
 
-Every launched agent is a real simulated process: PCB, PID, scheduling, virtual memory, page faults, context switches — all visible live.
+Every launched agent is a real simulated process: PCB, PID, scheduling, virtual memory, page faults, context switches — all visible live. Tasks advance through a deterministic `QUEUED → PLANNING → THINKING → ACTING → REPORTING → DONE` pipeline only while the agent's pid owns the CPU, and finished reports are written to `/Agents/<key>/report-<task>.md` in the virtual filesystem. Custom agents created in Agent Studio persist in SQLite and re-register at boot.
 
 ---
 
@@ -132,8 +135,9 @@ Every launched agent is a real simulated process: PCB, PID, scheduling, virtual 
 | MVP | M0 Project Skeleton · M1 Toolchain & Kernel Build · M2 Machine & CPU/Clock | ✅ Completed — motherboard model (board/chipset/bus/BIOS/slots) from `config/machine.json` |
 | MVP | M3a Process Manager · M3b Memory Manager · M11a Frontend Foundation (Electron) · M4 Interrupts & Errors · M4.5 Scheduler Strategy (RR/FCFS/SJF/Priority) | ✅ Completed — scheduler metrics (CPU util / avg wait / avg turnaround), per-agent memory budgets, `context_switch` IRQ |
 | MVP | M5 Virtual Filesystem & Disk · M6 Devices & Drivers | ✅ Completed — File Explorer + Device Manager live; config-driven devices + disk write buffer; 70 pytest + 7 C smokes |
-| MVP | M7 IPC & Synchronization · M8 Shell & CLI | ✅ Completed — IPC Lab (queues, shared memory, pipes, mutex/semaphore, wait-for graph, deadlock recovery) and Terminal (kernel shell) live; 82 pytest + 9 C smokes |
-| MVP | M9a Agent Core · M9b Consoles & Tools · M10b API · M11b Desktop | ▶ Next: M9a Agent Core |
+| MVP | M7 IPC & Synchronization · M8 Shell & CLI | ✅ Completed — IPC Lab (queues, shared memory, pipes, mutex/semaphore, wait-for graph, deadlock recovery) and Terminal (kernel shell) live; 90 pytest + 10 C smokes as of M9b |
+| MVP | M9a Agent Core · M9b Consoles & Tools | ✅ Completed — 9 built-in agents, kernel task pipeline, Agent Hub, Agent Studio (SQLite profiles), dynamic per-pid consoles; 90 pytest + 10 C smokes |
+| MVP | M10b API · M11b Desktop | ▶ Next: M10b Backend API Full, then M11b Desktop completion |
 | Post-MVP | M10a Voice · M12 AI & Gemini · M13 Testing/Packaging · M14 Docs/Release · M15 Future | ○ Pending |
 
 The MVP is the **clickable OS for AI agents**; voice and AI reasoning come after.

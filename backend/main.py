@@ -17,6 +17,11 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict
 
+from backend.routers.agents import (
+    register_stored_agents,
+    router as agents_router,
+)
+from backend.services.agent_store import init_db
 from backend.services.config_loader import load_config
 from backend.services.kernel_loader import (
     jvk_command,
@@ -43,11 +48,14 @@ async def lifespan(_app: FastAPI):
     result = jvk_init(load_config())
     if result != "ok":
         raise RuntimeError(f"kernel failed to boot: {result}")
+    init_db()
+    register_stored_agents()
     yield
     jvk_shutdown()
 
 
 app = FastAPI(title="JARVIS OS Bridge", version="0.1.0", lifespan=lifespan)
+app.include_router(agents_router, prefix="/api/agents", tags=["agents"])
 
 app.add_middleware(
     CORSMiddleware,

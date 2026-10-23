@@ -1187,6 +1187,133 @@ def test_config_includes_ipc_section() -> None:
         assert body["ipc"]["seed"] is True
 
 
+# ---- M9 agents --------------------------------------------------------
+
+
+def _boot_agents() -> None:
+    assert jvk_init(
+        {
+            "boot": True,
+            "agents": {
+                "stageTicks": {"plan": 1, "think": 1, "act": 1, "report": 1}
+            },
+        }
+    ) == "ok"
+
+
+def test_agents_snapshot_has_builtins() -> None:
+    _boot_agents()
+    agents = jvk_snapshot()["agents"]
+    keys = {d["key"] for d in agents["definitions"]}
+    assert keys >= {
+        "finance", "coding", "research", "writing", "hr",
+        "legal", "marketing", "travel", "health",
+    }
+    assert agents["stats"]["live"] == 0
+    assert len(agents["definitions"]) == 9
+    finance = next(d for d in agents["definitions"] if d["key"] == "finance")
+    assert finance["builtin"] is True
+    assert "query_budget" in finance["tools"]
+
+
+def test_agent_launch_task_pipeline_and_report() -> None:
+    _boot_agents()
+    launched = jvk_command({"action": "agent_launch", "agent": "finance"})
+    assert launched["ok"] is True
+    pid = launched["pid"]
+    task = jvk_command(
+        {
+            "action": "agent_task",
+            "agent": "finance",
+            "title": "Monthly budget review",
+            "input": "budget 1200 300 45",
+        }
+    )
+    assert task["ok"] is True
+    task_id = task["task_id"]
+
+    assert jvk_command({"action": "tick", "count": 40})["ok"] is True
+    agents = jvk_snapshot()["agents"]
+    item = next(t for t in agents["tasks"] if t["id"] == task_id)
+    assert item["stage"] == "DONE"
+    assert item["progress"] == 100
+    assert "budget envelope 1200" in item["result"]
+    assert agents["stats"]["tasks_done"] >= 1
+    assert agents["stats"]["reports"] >= 1
+    instance = next(i for i in agents["instances"] if i["pid"] == pid)
+    assert instance["mem_pages"] > 4
+    assert instance["cpu_ticks"] > 0
+
+    report = jvk_command(
+        {
+            "action": "fs_read",
+            "path": f"/Agents/finance/report-{task_id}.md",
+        }
+    )
+    assert report["ok"] is True
+    assert "Finance Agent" in report["content"]
+
+
+def test_agent_queue_cancel_and_kill() -> None:
+    _boot_agents()
+    pid = jvk_command({"action": "agent_launch", "agent": "coding"})["pid"]
+    first = jvk_command(
+        {"action": "agent_task", "pid": pid, "title": "Read spec"}
+    )["task_id"]
+    second = jvk_command(
+        {"action": "agent_task", "pid": pid, "title": "Write code"}
+    )["task_id"]
+    cancelled = jvk_command(
+        {"action": "agent_cancel", "pid": pid, "task": second}
+    )
+    assert cancelled["ok"] is True
+    assert jvk_command({"action": "suspend_process", "pid": pid})["ok"] is True
+    paused = [i for i in jvk_snapshot()["agents"]["instances"] if i["pid"] == pid][0]
+    assert paused["state"] == "SUSPENDED"
+    assert jvk_command({"action": "resume_process", "pid": pid})["ok"] is True
+    resumed = [i for i in jvk_snapshot()["agents"]["instances"] if i["pid"] == pid][0]
+    assert resumed["state"] in ("READY", "RUNNING")
+    killed = jvk_command({"action": "agent_kill", "pid": pid})
+    assert killed["ok"] is True
+    agents = jvk_snapshot()["agents"]
+    assert all(i["pid"] != pid for i in agents["instances"])
+    assert all(t["id"] != first for t in agents["tasks"])
+    assert jvk_command({"action": "agent_task", "pid": pid, "title": "x"})["ok"] is False
+
+
+def test_custom_agent_define_remove_and_limits() -> None:
+    _boot_agents()
+    created = jvk_command(
+        {
+            "action": "agent_define",
+            "key": "audit",
+            "name": "Audit Agent",
+            "role": "Check ledgers",
+            "tools": ["read_file", "summarize"],
+            "priority": 7,
+            "mem_pages": 2,
+        }
+    )
+    assert created["ok"] is True
+    pid = jvk_command({"action": "agent_launch", "key": "audit"})["pid"]
+    assert jvk_command({"action": "agent_remove", "key": "audit"})["ok"] is False
+    assert jvk_command({"action": "agent_kill", "pid": pid})["ok"] is True
+    assert jvk_command({"action": "agent_remove", "key": "audit"})["ok"] is True
+    snapshot = jvk_snapshot()["agents"]
+    assert all(d["key"] != "audit" for d in snapshot["definitions"])
+    duplicate = jvk_command(
+        {"action": "agent_define", "key": "finance", "name": "Impostor"}
+    )
+    assert duplicate["ok"] is False
+
+
+def test_config_includes_agents_section() -> None:
+    with TestClient(app) as client:
+        body = client.get("/api/config").json()
+        assert body["agents"]["builtins"] is True
+        assert body["agents"]["stageTicks"]["think"] == 2
+
+
 def test_jvk_shutdown() -> None:
     jvk_shutdown()
     snap = jvk_snapshot()

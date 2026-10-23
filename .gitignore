@@ -18,6 +18,11 @@ kernel/**/*.o
 .env
 .env.local
 
+# Persistent runtime data (SQLite Agent Studio profiles)
+data/*.db
+data/*.db-wal
+data/*.db-shm
+
 # Node / Electron
 node_modules/
 dist/

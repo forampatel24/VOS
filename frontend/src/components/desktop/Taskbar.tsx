@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useWindowStore, WindowId } from "@/store/windowStore";
+import { useWindowStore, type WindowId } from "@/store/windowStore";
 import { useKernelStore } from "@/store/kernelStore";
 
 const MENU: { id: WindowId; label: string; dot: string }[] = [
@@ -13,6 +13,8 @@ const MENU: { id: WindowId; label: string; dot: string }[] = [
   { id: "interrupts", label: "IRQs", dot: "bg-slate-400" },
   { id: "ipc", label: "IPC", dot: "bg-fuchsia-400" },
   { id: "terminal", label: "Terminal", dot: "bg-cyan-400" },
+  { id: "agent-hub", label: "Agents", dot: "bg-emerald-300" },
+  { id: "agent-studio", label: "Studio", dot: "bg-violet-300" },
 ];
 
 export default function Taskbar() {
@@ -59,6 +61,21 @@ export default function Taskbar() {
             </button>
           );
         })}
+        {Object.values(windows)
+          .filter((w) => w.open && /^agent-\d+$/.test(w.id))
+          .map((w) => (
+            <button
+              key={w.id}
+              onClick={() => handleClick(w.id as WindowId)}
+              className={`flex items-center gap-1.5 rounded-lg px-2 py-1.5 mono text-[11px] tracking-wide transition ${
+                !w.minimized ? "bg-white/10 text-emerald-100" : "text-white/50 hover:bg-white/5"
+              }`}
+              title={w.title}
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
+              <span className="hidden sm:inline">PID {w.id.slice("agent-".length)}</span>
+            </button>
+          ))}
       </div>
 
       {/* center: kernel status */}
@@ -73,6 +90,8 @@ export default function Taskbar() {
             <span className="text-cyan-300">{snapshot.processes} procs</span>
             <span className="text-white/20">·</span>
             <span className="text-violet-300">{snapshot.memory.stats.frames_used}/{snapshot.memory.config.total_frames} frames</span>
+            <span className="text-white/20">/</span>
+            <span className="text-emerald-300">{snapshot.agents.stats.live} agents</span>
           </>
         )}
         <button

@@ -32,6 +32,7 @@ SECTION_FILES: dict[str, str] = {
     "fs.json": "filesystem",
     "device.json": "devices",
     "ipc.json": "ipc",
+    "agents.json": "agents",
     "machine.json": "machine",
     "theme.json": "theme",
     "voice.json": "voice",

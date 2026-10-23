@@ -22,7 +22,7 @@ ifeq ($(UNAME_S),Linux)
   TARGET   = libjarvis_kernel.so
   IMPLIB   =
   LDFLAGS ?= 
-  TESTBINS = test_cpu test_process test_memory test_interrupts test_filesystem test_devices test_ipc test_shell test_system
+  TESTBINS = test_cpu test_process test_memory test_interrupts test_filesystem test_devices test_ipc test_shell test_system test_agents
 else
   CC      := ../.toolchain/gcc/bin/gcc.exe
   NASM    := ../.toolchain/nasm/nasm.exe
@@ -30,7 +30,7 @@ else
   TARGET   = jarvis_kernel.dll
   IMPLIB   = libjarvis_kernel.a
   LDFLAGS ?= -static-libgcc
-  TESTBINS = test_cpu.exe test_process.exe test_memory.exe test_interrupts.exe test_filesystem.exe test_devices.exe test_ipc.exe test_shell.exe test_system.exe
+  TESTBINS = test_cpu.exe test_process.exe test_memory.exe test_interrupts.exe test_filesystem.exe test_devices.exe test_ipc.exe test_shell.exe test_system.exe test_agents.exe
 endif
 CFLAGS  ?= -std=c17 -Wall -Wextra -O2
 ifeq ($(UNAME_S),Linux)
@@ -51,6 +51,7 @@ DRVDIR   = device/drivers
 MACHDIR  = machine
 IPCDIR   = ipc
 SHELLDIR = shell
+AGENTDIR = agent
 
 SRCS = $(SRCDIR)/kernel.c $(SRCDIR)/kernel_memory.c \
        $(SRCDIR)/kernel_fs.c $(SRCDIR)/kernel_fs_cmds.c \
@@ -58,7 +59,10 @@ SRCS = $(SRCDIR)/kernel.c $(SRCDIR)/kernel_memory.c \
        $(SRCDIR)/kernel_ipc.c $(SRCDIR)/kernel_ipc_cmds.c \
        $(SRCDIR)/kernel_ipc_sync_cmds.c $(SRCDIR)/kernel_ipc_snapshot.c \
        $(SRCDIR)/kernel_shell.c \
+       $(SRCDIR)/kernel_agents.c $(SRCDIR)/kernel_agents_config.c \
+       $(SRCDIR)/kernel_agent_effects.c $(SRCDIR)/kernel_agents_snapshot.c \
        $(MACHDIR)/machine.c \
+       $(AGENTDIR)/agent_registry.c $(AGENTDIR)/agent_tasks.c \
        $(IPCDIR)/ipc_types.c $(IPCDIR)/ipc_manager.c $(IPCDIR)/ipc_queue.c \
        $(IPCDIR)/ipc_shm.c $(IPCDIR)/ipc_pipe.c $(IPCDIR)/ipc_sync.c \
        $(IPCDIR)/ipc_deadlock.c \
@@ -141,6 +145,9 @@ test_shell test_shell.exe: tests/test_shell.c $(OBJS)
 
 test_system test_system.exe: tests/test_system.c $(OBJS)
 	$(CC) $(CFLAGS) -I. tests/test_system.c $(OBJS) $(LDFLAGS) -o $@
+
+test_agents test_agents.exe: tests/test_agents.c $(OBJS)
+	$(CC) $(CFLAGS) -I. tests/test_agents.c $(OBJS) $(LDFLAGS) -o $@
 
 clean:
 	rm -f $(OBJS) $(TARGET) $(IMPLIB) $(TESTBINS)

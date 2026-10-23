@@ -1,6 +1,6 @@
 # JARVIS OS — Detailed Implementation Handover
 
-**Version:** 1.3 · **Date:** 2026-10-22 · **Status:** M0 → M8 complete, 10 live windows, 82 pytest + 9 C smokes — ready for midsem
+**Version:** 1.4 · **Date:** 2026-10-23 · **Status:** M0 → M9b complete, 13 fixed windows + dynamic agent consoles, 90 pytest + 10 C smokes
 **Purpose:** Give a teammate (or an LLM) *everything* implemented, in minute detail, with no prior context. Hand this file to an LLM and it can answer any question about what exists, how it works, and how to run/demo it.
 
 ---
@@ -46,9 +46,11 @@ VOS/
 │   ├── interrupts/ (interrupt_types, ic, isr, error_manager)
 │   ├── ipc/ (ipc_types, ipc_manager, ipc_queue, ipc_shm, ipc_pipe, ipc_sync, ipc_deadlock)
 │   ├── shell/ (shell_parse, shell_cmds, shell_proc_cmds, shell_fs_cmds, shell_format)
+│   ├── agent/ (agent_types, agent_registry, agent_tasks — registry + Plan→Think→Act→Report engine)
+│   ├── core/kernel_agents*.c (launch/config/effects/snapshot glue, observer logging)
 │   ├── deps/cJSON/
-│   └── tests/test_cpu.c, test_process.c, test_memory.c, test_interrupts.c, test_filesystem.c, test_devices.c, test_ipc.c, test_shell.c, test_system.c
-├── backend/main.py (FastAPI + /ws) + services/kernel_loader.py (ctypes) + services/config_loader.py
+│   └── tests/test_cpu.c, test_process.c, test_memory.c, test_interrupts.c, test_filesystem.c, test_devices.c, test_ipc.c, test_shell.c, test_system.c, test_agents.c
+├── backend/main.py (FastAPI + /ws) + services/kernel_loader.py (ctypes) + services/config_loader.py + services/agent_store.py (SQLite profiles) + routers/agents.py
 ├── frontend/
 │   ├── electron/main.js (spawns uvicorn, waits /health, frameless window)
 │   ├── electron/preload.js (window.jarvis)
@@ -57,9 +59,9 @@ VOS/
 │       ├── api/types.ts + client.ts (typed REST + WS)
 │       ├── store/kernelStore.ts (Zustand, WS deltas) + windowStore.ts (WM)
 │       ├── components/BootScreen, desktop/Desktop, desktop/Taskbar, desktop/Window
-│       └── components/windows/ (SystemMonitor, ProcessManager, MemoryViewer, CpuScheduler, EventLog, InterruptCenter, FileExplorer, DeviceManager, IpcLab, Terminal, Placeholder)
-├── config/machine.json, clock.json, memory.json, paging.json, scheduler.json, fs.json, device.json, ipc.json, theme.json, voice.json
-├── tests/python/test_abi.py (82 tests)
+│       └── components/windows/ (SystemMonitor, ProcessManager, MemoryViewer, CpuScheduler, EventLog, InterruptCenter, FileExplorer, DeviceManager, IpcLab, Terminal, AgentHub, AgentStudio, AgentConsole, Placeholder)
+├── config/machine.json, clock.json, memory.json, paging.json, scheduler.json, fs.json, device.json, ipc.json, agents.json, theme.json, voice.json
+├── tests/python/test_abi.py + test_agents_api.py + other subsystem tests (90 tests)
 └── .venv/ + frontend/node_modules/ (not committed)
 ```
 
@@ -79,7 +81,7 @@ void        jvk_shutdown(void)
 int         jvk_last_error(char* buf, size_t n)
 ```
 
-**`jvk_command` actions implemented (M0-M8):**
+**`jvk_command` actions implemented (M0-M9b):**
 * `ping`, `echo`
 * `cpu_load_program {program:[u16]}`, `cpu_reset`, `cpu_step`
 * `create_process {name, priority, burst_time|burst|bt, mem_budget|mem_budget_mb}`, `kill_process {pid}`, `suspend_process {pid}`, `resume_process {pid}`, `list_processes`
@@ -89,6 +91,7 @@ int         jvk_last_error(char* buf, size_t n)
 * `fs_*` (15 actions, M5), `list_devices` / `device_set` / `device_write` / `device_read` / `device_flush` / `device_interrupt` / `device_fault` / `device_repair` (M6)
 * `ipc_queue_{create,send,recv,destroy}`, `ipc_shm_{create,attach,detach,write,read,destroy}`, `ipc_pipe_{create,open,close,write,read,destroy}`, `ipc_mutex_{create,lock,unlock,destroy}`, `ipc_sem_{create,wait,post,destroy}`, `ipc_deadlock`, `ipc_recover {pid}`, `list_ipc` (M7)
 * `shell_exec {line}` → `{ok, output, prompt, cwd, clear, exit, command}`, `list_memory`, `list_filesystem`, `tick {count}`, `shutdown` (M8)
+* `list_agents`, `agent_list`, `agent_tasks [pid]`, `agent_define {key,name,role,personality,color,icon,priority,mem_pages,tools}`, `agent_remove {key|id}`, `agent_launch {key|id}`, `agent_task {pid,title,input}`, `agent_cancel {pid,task_id}`, `agent_kill {pid}` (M9a)
 
 **`jvk_snapshot` top-level keys (all live, no hardcode):**
 ```json
@@ -110,6 +113,7 @@ int         jvk_last_error(char* buf, size_t n)
   "filesystem": {"config":{...},"stats":{...},"disk":{...},"entries":[...],"open_files":[...]},
   "devices": {"count":8,"stats":{...},"list":[{"key":"disk","info":{"transfers":2,"writes":2,"buffered":0,"buffer_blocks":8,"flushes":1}},...]},
   "ipc": {"config":{"queue_capacity":8,"pipe_capacity":256,"shm_bytes":128},"stats":{...},"queues":[...],"segments":[...],"pipes":[...],"mutexes":[...],"semaphores":[...],"deliveries":[...],"wait_graph":{"edges":[],"cycles":[],"active":false}},
+  "agents": {"config":{"max_definitions":24,"max_live":8,"max_tasks":8,"stage_plan":1,"stage_think":2,"stage_act":2,"stage_report":1},"stats":{"definitions":9,"live":1,"launched":1,"tasks_queued":1,"tasks_done":0,"tasks_failed":0,"reports":0},"definitions":[{"id":1,"key":"finance","name":"Finance Agent","role":"...","personality":"...","color":"#22d3ee","icon":"wallet","builtin":true,"priority":6,"mem_pages":4,"running_pid":1,"tools":["query_budget","compute_total"]}],"instances":[{"pid":1,"def_id":1,"key":"finance","name":"Finance Agent","state":"READY","activity":"THINKING","priority":6,"mem_pages":4,"memory_growth":0,"cpu_ticks":3,"launched_ticks":8,"tasks_queued":1,"tasks_done":0,"tasks_failed":0,"active_tasks":1,"current_task":1,"current":{"id":1,"title":"...","stage":"THINKING","progress":45,"tool":"compute_total"}}],"tasks":[{"id":1,"pid":1,"def_id":1,"agent_key":"finance","agent":"Finance Agent","title":"...","input":"...","stage":"THINKING","progress":45,"tool":"compute_total","plan":"...","thought":"...","action":"...","result":"...","report":"","writes":1,"reads":0,"created_ticks":9,"started_ticks":9,"completed_ticks":0}]},
   "shell": {"cwd":"/","prompt":"jarvis@vos:/$ ","last_status":0,"last_output":""},
   "cpu": {"pc":4,"sp":0,"ir":8208,"halted":false,"program_size":13,"registers":{"R0":10,"R1":5,...},"flags":{"Z":false,"N":false,"C":false}},
   "clock": {"speed_hz":1000,"quantum":10,"ticks":123}
@@ -198,6 +202,17 @@ int         jvk_last_error(char* buf, size_t n)
 * **Glue:** `kernel/core/kernel_shell.c` implements `shell_exec {line}` → `{ok, output, prompt, cwd, clear, exit, command}`; prompt is derived from cwd (`jarvis@vos:<cwd>$ `), `clear`/`exit` are flags for the terminal, and the last output/status live in the `shell` snapshot object.
 * **Kernel additions:** `list_memory`, `list_filesystem`, `tick {count}` and `shutdown` actions; `kill_process` and IPC recovery share one kill helper that frees process, scheduler, memory, files and IPC state.
 
+## 9.7 Agent System (M9a) & Consoles (M9b)
+
+* **Subsystems:** `kernel/agent/agent_registry.c` owns definitions (24 slots, one live instance per definition) and `agent_tasks.c` owns per-agent task slots (8 each), the deterministic stage machine and generated plan/thought/action/result/report text. Neither touches process/memory/FS directly; `kernel/core/kernel_agents*.c` is the glue.
+* **Built-ins:** nine definitions seeded from `config/agents.json` (Finance, Coding, Research, Writing, HR, Legal, Marketing, Travel, Health) with role, personality, colour, icon label, tool list, priority and memory pages. `agent_define` adds/updates custom definitions; the backend mirrors Agent Studio profiles into them after boot.
+* **Process integration:** `agent_launch` calls `pm_create`, `scheduler_register_ex`, `pm_set_budget` and `mm_alloc` (budget = `mem_pages + 2` so the ACT stage can grow by at most 2 pages), creates `/Agents/<key>` in the VFS, and returns the real pid. `agent_kill`/`kill_process` share the kernel kill hook so the registry entry and process slot stay consistent.
+* **Task lifecycle:** `agent_task {pid,title,input}` queues a task; only when the scheduler selects that pid does `kagent_tick` advance it. Defaults: PLAN 1 tick, THINK 2, ACT 2, REPORT 1. Stages are `QUEUED, PLANNING, THINKING, ACTING, REPORTING, DONE` (plus `FAILED`/`CANCELLED`). Tasks are recycled only when terminal.
+* **Tool effects:** deterministic per-tool simulation — budget arithmetic, VFS search/read, spec-read/code-generation/tests, draft writing/rewriting, onboarding/policy/compliance/brainstorm/campaign/itinerary/booking/wellness/reminder. Writes update the VFS and a report is stored at `/Agents/<key>/report-<task>.md`.
+* **Snapshot:** `agents {config, stats, definitions, instances, tasks}`; each instance carries pid, state/activity, cpu ticks, memory pages/growth, task counts and the current task; each task carries the full trace and progress.
+* **Backend persistence (M9b):** `backend/services/agent_store.py` stores custom profiles in SQLite (`JARVIS_AGENT_DB`, default `data/jarvis_agents.db`, table `agent_profiles`). `backend/routers/agents.py` exposes `GET/POST /api/agents` and `PUT/DELETE /api/agents/{id}` with validation/clamping and a `409` when a running profile is deleted. `register_stored_agents()` re-registers all profiles after kernel boot.
+* **UI (M9b):** Agent Hub (stats, installed definitions, launch/stop, open console, queue/pipeline), Agent Studio (create/edit/delete custom profiles + save-and-launch), and dynamic Agent Consoles keyed by pid (task dispatch, pipeline bar, trace, report, queue/history, cancel, +1/+10 ticks, terminate). `windowStore` now supports arbitrary `agent-<pid>` ids; taskbar lists live consoles.
+
 ---
 
 ## 10. Bridge (Backend)
@@ -208,6 +223,7 @@ int         jvk_last_error(char* buf, size_t n)
   * `POST /api/command` → `jvk_command`
   * `GET /api/tick` → `jvk_tick` + snapshot
   * `GET /api/logs?since=n` → `jvk_logs`
+  * `GET|POST /api/agents`, `PUT|DELETE /api/agents/{id}` → SQLite agent profiles + kernel registry registration
   * `WS /ws` → loop as above, handles client `{"action":"tick"}` and `{"action":"command","payload":{}}`
 * `backend/services/kernel_loader.py` — `ctypes CDLL(kernel/jarvis_kernel.dll)`, `c_void_p + string_at` (kernel owns buffers), wrappers `jvk_init, jvk_command, jvk_tick, jvk_snapshot, jvk_logs, jvk_shutdown`.
 
@@ -219,8 +235,8 @@ int         jvk_last_error(char* buf, size_t n)
 * **Build:** `Vite 5 + React 18 + TS 5 + Tailwind 3 + Zustand 4 + Framer Motion 11 + Axios 1.7`. `vite.config.ts` proxies `/api, /ws, /health` to `127.0.0.1:8000`. `tailwind.config.js` defines `jarvis.*` palette.
 * **State:**
   * `store/kernelStore.ts` — `snapshot, logs, connected, error, logCursor` + `init` (REST initial + `createKernelSocket` WS push, merges logs, keeps 400), `command`, `doTick`.
-  * `store/windowStore.ts` — `windows[11]` with `x,y,w,h,z,open,minimized`, `nextZ`, actions `open/close/focus/move/resize/toggleMinimize`. Defaults: System Monitor + Event Log open.
-* **API:** `api/types.ts` mirrors `jvk_snapshot` exactly, `api/client.ts` `fetchSnapshot, fetchHealth, fetchLogs, sendCommand, tick, createKernelSocket` (auto-reconnect, fallback `ws://127.0.0.1:8000/ws` when Vite on 5173).
+  * `store/windowStore.ts` — `windows: Record<string, WindowState>` with `x,y,w,h,z,open,minimized`, fixed ids (`system-monitor … agent-hub, agent-studio, settings`) plus dynamic ``agent-${number}`` console ids; `open(id,title?)` creates missing dynamic windows, actions `open/close/focus/move/resize/toggleMinimize`. Defaults: System Monitor + Event Log open.
+* **API:** `api/types.ts` mirrors `jvk_snapshot` exactly (including `agents`), `api/client.ts` `fetchSnapshot, fetchHealth, fetchLogs, sendCommand, tick, createKernelSocket` plus `fetchAgentProfiles, createAgentProfile, updateAgentProfile, deleteAgentProfile` (auto-reconnect, fallback `ws://127.0.0.1:8000/ws` when Vite on 5173).
 * **Windows (all read `snapshot`/`logs` only, no fake):**
   * `SystemMonitor` — `processes, memory %, CPU PC/SP/IR/halted, uptime_ticks, queues, memory policies + swap + faults, clock`.
   * `ProcessManager` — table `PID/NAME/STATE/PRIO/BT/AT` with `PRIO/BT` inputs on CREATE (sends `priority, burst_time`), `PAUSE/RESUME/KILL`, queues footer.
@@ -232,8 +248,11 @@ int         jvk_last_error(char* buf, size_t n)
   * `DeviceManager` — 8 devices, per-driver I/O panel (keyboard inject/read, mouse move, display lines, printer spool, clock IRQ, disk status), power/fault/repair, counters straight from the snapshot.
   * `IpcLab` — live queues/segments/pipes/mutexes/semaphores, blocked sender/receiver lists, wait-for graph with cycles, DETECT + RECOVER actions, and an operations console (`IpcOps`) for every IPC action with pid selection.
   * `Terminal` — kernel shell: prompt/cwd from the `shell` snapshot, command history (↑/↓), ctrl+l clear, quick buttons, executes `shell_exec` for every line.
+  * `AgentHub` — live agent stats, nine built-in + custom definitions (colour/role/tools/priority/memory), launch/stop, open console, aggregate task queue with stage/progress, STEP ticks.
+  * `AgentStudio` — form for name, role/system prompt, personality, colour, icon, ≤4 simulated tools, priority and memory pages; saves through `/api/agents` (SQLite), edits and deletes custom profiles, Save & Launch opens the new console.
+  * `AgentConsole` — one per running pid: task title/input dispatch, queue/history with cancel, `QUEUED→PLANNING→THINKING→ACTING→REPORTING→DONE` pipeline and progress, plan/thought/action/result/report trace, CPU ticks/memory/growth, +1/+10 tick controls and terminate.
   * `Placeholder` — honest `Subsystem offline — arrives in Mx` for Settings until M10b.
-* **Chrome:** `Desktop` (wallpaper + 10 desktop icons, double-click to open) + `Taskbar` (launcher, window buttons, `kernel live` dot + `procs/frames`, `TICK` button, clock, Electron window controls) + `BootScreen` (2.2s phases + click to skip, failsafe 3.5s) + `Window` (drag header, resize handle, Framer Motion enter/exit, focus → `z`).
+* **Chrome:** `Desktop` (wallpaper + 12 desktop icons in two columns, double-click to open, fixed windows + dynamic consoles rendered from `windowStore`) + `Taskbar` (launcher, window buttons, live agent-console buttons, `kernel live` dot + `procs/frames/agents`, `TICK` button, clock, Electron window controls) + `BootScreen` (2.2s phases + click to skip, failsafe 3.5s) + `Window` (drag header, resize handle, Framer Motion enter/exit, focus → `z`).
 
 ---
 
@@ -253,7 +272,7 @@ pip install -r backend\requirements.txt
 # 2. kernel
 Set-Location kernel
 mingw32-make          # → jarvis_kernel.dll
-mingw32-make test     # 9/9 PASS
+mingw32-make test     # 10/10 PASS
 Set-Location ..
 
 # 3. frontend
@@ -264,7 +283,7 @@ npx vite build        # → dist/index.html + 401KB JS
 Set-Location ..
 
 # 4. tests
-python -m pytest tests -q  # 82 passed
+python -m pytest tests -q  # 90 passed
 
 # 5. run (two terminals)
 # Terminal A:
@@ -291,21 +310,22 @@ Health: `http://127.0.0.1:8000/health`, WS: `ws://127.0.0.1:8000/ws`, Frontend: 
 9. `System Monitor` → MACHINE panel shows the board/chipset/bus/BIOS/POST read from `config/machine.json`, plus live CPU utilisation / avg wait / avg turnaround; `Process Manager` MEM column shows each agent's `mem_pages / budget`; `Device Manager` disk → two writes stay `buffered`, FLUSH commits them.
 10. `IPC Lab` → queue `agent-bus` already seeded; create processes, send until a sender blocks (amber waiter), recv to wake it; write a shared segment and attach/read it; lock `log-lock` from two pids and watch handoff; create two mutexes and cross-lock them → `DETECT` shows the cycle and `RECOVER` kills one holder. Every stat comes from `ipc` in the snapshot.
 11. `Terminal` → `help`, `ps`, `ipc`, `files`, `mkdir /demo`, `write-file /demo/a.txt hello`, `cat`, then `send agent-bus hi` + `recv agent-bus`; `kill <name>`, `tick 3`, `shutdown` all run through the kernel.
+12. `Agent Hub` → LAUNCH Finance → its console opens with a real pid; queue "Quarterly budget summary" → watch `PLANNING → THINKING → ACTING → REPORTING → DONE` as the scheduler gives the pid CPU; click `+10` to finish quickly, read the generated report and inspect `/Agents/finance/report-*.md` in File Explorer. `Process Manager` shows the same pid's PCB/memory; `Agent Studio` → create a custom agent → Save & Launch → it appears in Agent Hub and runs the same pipeline; restart the backend and it is still registered.
 
 ---
 
 ## 14. What Is Still Offline (honest placeholders)
 
-* Agent Hub/Studio, AI and Settings — windows show `offline — arrives in M9/M10b/...`. Their kernel modules and APIs will follow the same vertical-slice pattern (kernel + bridge + window goes live together).
+* AI (Gemini reasoning/voice) and Settings persistence — Settings shows `offline — arrives in M10b`; the M9 agent system is fully live. Future modules follow the same vertical-slice pattern (kernel + bridge + window goes live together).
 
 ---
 
 ## 15. Verification Evidence (as of this doc)
 
-* Ubuntu 24.04 WSL: `cd kernel && make clean && make && make test` → `libjarvis_kernel.so`, `PASS: cpu / process / memory / interrupts / filesystem / devices / ipc / shell / system` (9/9)
-* `python -m pytest tests -q` → `82 passed` (19 M5 filesystem + 19 M6 devices + 9 machine/metrics/budget/config tests + 12 M7 IPC + 4 M8 shell + bridge/ABI)
-* `cd frontend && npm run typecheck && npm run build` → clean (474 modules, 401KB JS / 22.8KB CSS)
-* Live `uvicorn` → `health ok`, `GET /api/config`, `fs_create/fs_read`, `device_write/device_read`, `device_flush`, `device_interrupt`, IPC queue/SHM/pipe/mutex/semaphore + deadlock recover, `shell_exec`, machine snapshot + budget denial, flat + nested command payloads, `WS` pushes `snapshot + logs` every 2.5s.
+* Ubuntu 24.04 WSL: `cd kernel && make clean && make && make test` → `libjarvis_kernel.so`, `PASS: cpu / process / memory / interrupts / filesystem / devices / ipc / shell / system / agents` (10/10)
+* `python -m pytest tests -q` → `90 passed` (M5 filesystem + M6 devices + machine/metrics/budget/config + M7 IPC + M8 shell + M9 agent ABI + Agent Studio persistence/API + bridge/ABI)
+* `cd frontend && npm run typecheck && npm run build` → clean (477 modules, 426KB JS / 25.2KB CSS)
+* Live kernel round-trip (TestClient, same ctypes path): launch `finance` → `agent_task` → ticks → `DONE 100%`, tool `query_budget`, 355-char report at `/Agents/finance/report-1.md`; create `custom-*` profile → it appears in `agents.definitions`; agent kill succeeds. Existing FS/device/IPC/shell/machine checks remain green.
 
 ---
 

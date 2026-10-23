@@ -1,0 +1,12 @@
+{
+  "builtins": true,
+  "maxTasks": 8,
+  "stageTicks": {
+    "plan": 1,
+    "think": 2,
+    "act": 2,
+    "report": 1
+  },
+  "definitions": [],
+  "_comment": "Built-in agents are seeded by the kernel. Custom agents are stored in SQLite by the backend bridge and re-registered at boot."
+}

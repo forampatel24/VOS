@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type WindowId =
+export type FixedWindowId =
   | "system-monitor"
   | "processes"
   | "memory"
@@ -11,7 +11,11 @@ export type WindowId =
   | "devices"
   | "interrupts"
   | "terminal"
-  | "settings";
+  | "settings"
+  | "agent-hub"
+  | "agent-studio";
+
+export type WindowId = FixedWindowId | `agent-${number}`;
 
 export interface WindowState {
   id: WindowId;
@@ -26,9 +30,9 @@ export interface WindowState {
 }
 
 interface WindowStore {
-  windows: Record<WindowId, WindowState>;
+  windows: Record<string, WindowState>;
   nextZ: number;
-  open: (id: WindowId) => void;
+  open: (id: WindowId, title?: string) => void;
   close: (id: WindowId) => void;
   focus: (id: WindowId) => void;
   move: (id: WindowId, x: number, y: number) => void;
@@ -36,7 +40,7 @@ interface WindowStore {
   toggleMinimize: (id: WindowId) => void;
 }
 
-const defaults: Record<WindowId, WindowState> = {
+const defaults: Record<string, WindowState> = {
   "system-monitor": { id: "system-monitor", title: "System Monitor", open: true, x: 40, y: 40, w: 560, h: 360, z: 1, minimized: false },
   processes: { id: "processes", title: "Process Manager", open: false, x: 80, y: 80, w: 640, h: 420, z: 2, minimized: false },
   memory: { id: "memory", title: "Memory Viewer", open: false, x: 120, y: 120, w: 640, h: 460, z: 3, minimized: false },
@@ -48,35 +52,68 @@ const defaults: Record<WindowId, WindowState> = {
   interrupts: { id: "interrupts", title: "Interrupt Center", open: false, x: 200, y: 200, w: 600, h: 400, z: 9, minimized: false },
   terminal: { id: "terminal", title: "Terminal", open: false, x: 220, y: 220, w: 600, h: 380, z: 10, minimized: false },
   settings: { id: "settings", title: "Settings", open: false, x: 240, y: 240, w: 520, h: 400, z: 11, minimized: false },
+  "agent-hub": { id: "agent-hub", title: "Agent Hub", open: false, x: 60, y: 60, w: 820, h: 560, z: 12, minimized: false },
+  "agent-studio": { id: "agent-studio", title: "Agent Studio", open: false, x: 120, y: 80, w: 660, h: 600, z: 13, minimized: false },
 };
+
+function makeWindow(id: WindowId, title?: string, count = 0): WindowState {
+  return {
+    id,
+    title: title ?? "Agent Console",
+    open: false,
+    x: 140 + (count % 6) * 26,
+    y: 90 + (count % 5) * 24,
+    w: 780,
+    h: 580,
+    z: 14,
+    minimized: false,
+  };
+}
 
 export const useWindowStore = create<WindowStore>((set) => ({
   windows: { ...defaults },
   nextZ: 20,
-  open: (id) =>
+  open: (id, title) =>
     set((s) => {
       const z = s.nextZ + 1;
-      return { windows: { ...s.windows, [id]: { ...s.windows[id], open: true, minimized: false, z } }, nextZ: z };
+      const base = s.windows[id] ?? makeWindow(id, title, Object.keys(s.windows).length);
+      const next = title ? { ...base, title } : base;
+      return { windows: { ...s.windows, [id]: { ...next, open: true, minimized: false, z } }, nextZ: z };
     }),
   close: (id) =>
-    set((s) => ({
-      windows: { ...s.windows, [id]: { ...s.windows[id], open: false } },
-    })),
+    set((s) => {
+      const w = s.windows[id];
+      if (!w) return {};
+      return { windows: { ...s.windows, [id]: { ...w, open: false } } };
+    }),
   focus: (id) =>
     set((s) => {
+      const w = s.windows[id];
+      if (!w) return {};
       const z = s.nextZ + 1;
-      return { windows: { ...s.windows, [id]: { ...s.windows[id], z } }, nextZ: z };
+      return { windows: { ...s.windows, [id]: { ...w, z } }, nextZ: z };
     }),
   move: (id, x, y) =>
-    set((s) => ({
-      windows: { ...s.windows, [id]: { ...s.windows[id], x, y } },
-    })),
+    set((s) => {
+      const w = s.windows[id];
+      if (!w) return {};
+      return { windows: { ...s.windows, [id]: { ...w, x, y } } };
+    }),
   resize: (id, w, h) =>
-    set((s) => ({
-      windows: { ...s.windows, [id]: { ...s.windows[id], w: Math.max(320, w), h: Math.max(200, h) } },
-    })),
+    set((s) => {
+      const win = s.windows[id];
+      if (!win) return {};
+      return {
+        windows: {
+          ...s.windows,
+          [id]: { ...win, w: Math.max(320, w), h: Math.max(200, h) },
+        },
+      };
+    }),
   toggleMinimize: (id) =>
-    set((s) => ({
-      windows: { ...s.windows, [id]: { ...s.windows[id], minimized: !s.windows[id].minimized } },
-    })),
+    set((s) => {
+      const w = s.windows[id];
+      if (!w) return {};
+      return { windows: { ...s.windows, [id]: { ...w, minimized: !w.minimized } } };
+    }),
 }));

@@ -37,6 +37,7 @@
 #include "interrupts/ic.h"
 #include "interrupts/isr.h"
 #include "kernel_devices.h"
+#include "kernel_agents.h"
 #include "kernel_fs.h"
 #include "kernel_ipc.h"
 #include "kernel_memory.h"
@@ -77,6 +78,7 @@ static jvk_device_manager_t  g_dm;
 static jvk_machine_t         g_machine;
 static jvk_ipc_t             g_ipc;
 static kshell_t              g_ksh;
+static jvk_agent_registry_t   g_agents;
 static int           g_current_pid = -1;
 static int           g_cpu_halt_logged = 0;
 static unsigned long g_ctx_switches = 0;
@@ -141,6 +143,12 @@ static void ipc_event_trampoline(void* user, const char* message)
     }
 }
 
+static void agent_event_trampoline(void* user, const char* message)
+{
+    (void)user;
+    jvk_log(message);
+}
+
 /* Every hardware IRQ line is delivered to the devices sitting on it. */
 static void dev_isr_bridge(jvk_ic_t* ic, const jvk_irq_entry_t* entry, void* user)
 {
@@ -157,6 +165,7 @@ static int kernel_kill_process(int pid, int* freed_out, int* closed_out)
     if (!pm_kill(&g_pm, pid)) {
         return 0;
     }
+    kagent_on_kill(&g_agents, pid);
     scheduler_unregister(&g_sched, pid);
     int freed = mm_free_pid(&g_mm, pid);
     int closed = kfs_close_owner(&g_fs, pid);
@@ -353,6 +362,10 @@ const char* jvk_init(const char* config_json)
     }
     kipc_set_observer(&g_ipc, ipc_event_trampoline, NULL);
     ksh_boot(&g_ksh);
+    int agent_defs = kagent_boot(&g_agents, root);
+    if (agent_defs > 0) {
+        agent_set_observer(&g_agents, agent_event_trampoline, NULL);
+    }
 
     /* M2 machine: the board the kernel just came up on. */
     machine_init(&g_machine, root);
@@ -425,6 +438,11 @@ const char* jvk_init(const char* config_json)
              g_ipc.cfg_shm_bytes);
     jvk_log(msg);
     jvk_log("shell: ready");
+    snprintf(msg, sizeof(msg),
+             "agents: definitions=%d live_cap=%d builtins=%d",
+             g_agents.def_count, JVK_AGENT_MAX_LIVE,
+             g_agents.def_count >= 9 ? 1 : 0);
+    jvk_log(msg);
 
     snprintf(g_init_buf, sizeof(g_init_buf), "ok");
     return g_init_buf;
@@ -683,6 +701,17 @@ const char* jvk_command(const char* action_json)
         cJSON_AddNumberToObject(result, "avg_turnaround", avg_turn);
         cJSON_AddNumberToObject(result, "completed", (double)g_sched.completed);
         cJSON_AddBoolToObject(result, "ok", 1);
+    } else if (strcmp(action, "list_agents") == 0 ||
+               strncmp(action, "agent_", 6) == 0) {
+        kagent_env_t env = {
+            .pm = &g_pm,
+            .sched = &g_sched,
+            .mm = &g_mm,
+            .fs = &g_fs,
+            .kill = ipc_kill_hook,
+            .kill_user = NULL,
+        };
+        (void)kagent_handle(&g_agents, &env, action, req, result, g_ticks);
     } else if (strncmp(action, "fs_", 3) == 0) {
         if (!kfs_handle(&g_fs, action, req, result, g_ticks)) {
             em_record(&g_em, JVK_ERR_FILESYSTEM, "unknown fs action", &g_ic);
@@ -815,6 +844,10 @@ void jvk_tick(void)
         }
     }
 
+    if (!g_ic.panic && g_current_pid > 0) {
+        kagent_tick(&g_agents, g_current_pid, g_ticks, &g_fs, &g_mm);
+    }
+
     if (g_ticks % 10 == 0) {
         char msg[JVK_LOG_LEN];
         snprintf(msg, sizeof(msg), "tick %lu", g_ticks);
@@ -842,6 +875,7 @@ const char* jvk_snapshot(void)
     machine_snapshot(&g_machine, root);
     kipc_snapshot(&g_ipc, root);
     ksh_snapshot(&g_ksh, root);
+    kagent_snapshot(&g_agents, &g_pm, g_current_pid, root);
 
     cJSON* sched = cJSON_CreateObject();
     cJSON_AddStringToObject(sched, "algo", scheduler_algo_name(g_sched.algo));
