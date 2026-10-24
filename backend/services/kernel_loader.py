@@ -13,10 +13,28 @@ from __future__ import annotations
 import ctypes
 import json
 import os
+import threading
+from contextlib import contextmanager
+from typing import Iterator
 
 KERNEL_NAMES = ("libjarvis_kernel.so", "jarvis_kernel.dll")
 
 _kernel: ctypes.CDLL | None = None
+# The C kernel is deliberately single-threaded. FastAPI serves sync routes
+# from a thread pool and the WebSocket hub also calls the ABI, so every
+# cross-boundary call is serialized. The lock is re-entrant to allow a
+# caller to hold it across tick + snapshot + logs as one atomic frame.
+_kernel_lock = threading.RLock()
+
+
+@contextmanager
+def kernel_lock() -> Iterator[None]:
+    """Serialize access to the in-process C kernel."""
+    _kernel_lock.acquire()
+    try:
+        yield
+    finally:
+        _kernel_lock.release()
 
 
 def _project_root() -> str:
@@ -82,15 +100,15 @@ def load_kernel() -> ctypes.CDLL:
 # ---- typed wrappers -----------------------------------------------------
 
 def jvk_init(config: dict | None = None) -> str:
-    lib = load_kernel()
     payload = json.dumps(config or {}).encode("utf-8")
-    return _read_string(lib.jvk_init(payload))
+    with kernel_lock():
+        return _read_string(load_kernel().jvk_init(payload))
 
 
 def jvk_command(action: dict) -> dict:
-    lib = load_kernel()
     payload = json.dumps(action).encode("utf-8")
-    result = _read_string(lib.jvk_command(payload))
+    with kernel_lock():
+        result = _read_string(load_kernel().jvk_command(payload))
     try:
         return json.loads(result)
     except json.JSONDecodeError:
@@ -98,12 +116,13 @@ def jvk_command(action: dict) -> dict:
 
 
 def jvk_tick() -> None:
-    load_kernel().jvk_tick()
+    with kernel_lock():
+        load_kernel().jvk_tick()
 
 
 def jvk_snapshot() -> dict:
-    lib = load_kernel()
-    result = _read_string(lib.jvk_snapshot())
+    with kernel_lock():
+        result = _read_string(load_kernel().jvk_snapshot())
     try:
         return json.loads(result)
     except json.JSONDecodeError:
@@ -111,8 +130,8 @@ def jvk_snapshot() -> dict:
 
 
 def jvk_logs(since: int = 0) -> dict:
-    lib = load_kernel()
-    result = _read_string(lib.jvk_logs(since))
+    with kernel_lock():
+        result = _read_string(load_kernel().jvk_logs(since))
     try:
         return json.loads(result)
     except json.JSONDecodeError:
@@ -120,11 +139,13 @@ def jvk_logs(since: int = 0) -> dict:
 
 
 def jvk_shutdown() -> None:
-    load_kernel().jvk_shutdown()
+    with kernel_lock():
+        load_kernel().jvk_shutdown()
 
 
 def jvk_last_error() -> str:
     lib = load_kernel()
     buf = ctypes.create_string_buffer(256)
-    lib.jvk_last_error(buf, ctypes.c_size_t(256))
+    with kernel_lock():
+        lib.jvk_last_error(buf, ctypes.c_size_t(256))
     return buf.value.decode("utf-8", errors="replace")

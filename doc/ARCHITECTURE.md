@@ -5907,35 +5907,74 @@ The AI never directly controls operating system modules.
 
 Frontend communicates using REST APIs.
 
-Examples
+Shipped endpoints
 
 ```
-POST /agents/launch
+GET    /health                          kernel snapshot
 
-POST /agents/close
+GET    /api/snapshot                    kernel snapshot
+GET    /api/config                      merged boot config
+GET    /api/logs?since=N                incremental kernel log
+POST   /api/command                     flat JSON ABI passthrough
+GET    /api/tick | POST /api/system/tick
 
-POST /agents/task
+GET    /api/system[/info]               machine, clock, scheduler, counts
+GET    /api/system/logs | POST /api/system/shutdown
+GET    /api/system/settings             persisted settings
+PATCH  /api/system/settings             live apply + persist (alias /api/settings)
 
-POST /process/create
+GET    /api/processes                   queue + process list
+POST   /api/processes                   create process
+GET    /api/processes/{pid}             single PCB
+POST   /api/processes/{pid}/suspend
+POST   /api/processes/{pid}/resume
+DELETE /api/processes/{pid}             kill process
 
-POST /process/kill
+GET    /api/scheduler | PUT /api/scheduler
+GET    /api/cpu | POST /api/cpu/program|step|reset
 
-GET /processes
+GET    /api/memory
+POST   /api/memory/alloc | free | read | write
+POST   /api/memory/config | PATCH /api/memory/config
 
-GET /agents
+GET    /api/filesystem | /entries | /stat | /disk
+POST   /api/filesystem/entries | directories | read | write
+POST   /api/filesystem/rename | copy | move | search | open | close
+POST   /api/filesystem/chmod | format
+DELETE /api/filesystem/entries?path=...
 
-GET /memory
+GET    /api/devices | /api/devices/{key}
+POST   /api/devices/{key}/read|write|flush|interrupt|fault|repair
+PATCH  /api/devices/{key}               connect/disconnect/power/state
 
-GET /filesystem
+GET    /api/interrupts | POST /api/interrupts
+POST   /api/interrupts/panic | clear-panic
+GET    /api/errors
 
-GET /devices
+GET    /api/ipc
+POST   /api/ipc/deadlock/detect | GET /api/ipc/deadlock
+POST   /api/ipc/deadlock/recover
+POST   /api/ipc/queues | /queues/{name}/send|recv
+POST   /api/ipc/segments | /segments/{name}/attach|detach|write|read
+POST   /api/ipc/pipes | /pipes/{name}/open|close|write|read
+POST   /api/ipc/mutexes | /mutexes/{name}/lock|unlock
+POST   /api/ipc/semaphores | /semaphores/{name}/wait|post
+DELETE /api/ipc/{queues|segments|pipes|mutexes|semaphores}/{name}
 
-POST /voice
+GET    /api/shell | POST /api/shell/exec
 
-POST /automation
+GET    /api/agents                      Agent Studio profiles
+GET    /api/agents/runtime | definitions | instances
+GET    /api/agents/tasks?pid=N
+POST   /api/agents/launch | tasks
+POST   /api/agents/tasks/{id}/cancel
+POST   /api/agents/instances/{pid}/tasks|cancel|suspend|resume
+DELETE /api/agents/instances/{pid}
 ```
 
-Every endpoint forwards requests to the Kernel.
+Every endpoint validates its request with Pydantic, forwards exactly one
+kernel action or reads the authoritative snapshot, and validates the reply.
+The bridge stores no runtime state.
 
 ---
 
@@ -5965,22 +6004,38 @@ Rules:
 Real-time updates
 
 ```
-/ws/processes
+/ws                 full snapshot + logs (legacy-compatible)
 
-/ws/memory
+/ws/processes       process_list, queues, scheduler
 
-/ws/cpu
+/ws/memory          memory config, stats, page tables, frame map
 
-/ws/logs
+/ws/cpu             cpu registers/flags, clock, scheduler, machine
 
-/ws/devices
+/ws/logs            incremental kernel log
 
-/ws/notifications
+/ws/devices         devices + interrupt state
 
-/ws/voice
+/ws/interrupts      interrupts + error manager
+
+/ws/filesystem      VFS, disk and open-file state
+
+/ws/ipc             queues, segments, pipes, mutexes, semaphores, wait graph
+
+/ws/agents          definitions, live instances, tasks
+
+/ws/notifications   new log lines with level derived from kernel text
+
+/ws/voice           honest status: available=false until voice ships
 ```
 
-The frontend subscribes once during startup.
+Payloads are `{"type":"update","channel":...,"uptime_ticks":...,"logs":[...],"data":...}`
+(`/ws` carries the whole `snapshot` instead of `data`). One hub task calls
+`jvk_tick()` every 2 seconds; it holds the kernel lock across tick + snapshot
++ logs so every client sees a coherent frame. Connecting more clients never
+speeds up the virtual clock. Clients may send `tick`, `snapshot`, `ping`, or
+`command` with a JSON ABI payload; command results are returned on the same
+socket. The frontend subscribes once during startup.
 
 ---
 

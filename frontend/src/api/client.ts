@@ -4,6 +4,8 @@ import type {
   AgentProfileInput,
   KernelSnapshot,
   LogEntry,
+  SettingsPatch,
+  SettingsResponse,
 } from "./types";
 
 const API_BASE = ""; // proxied via Vite to 127.0.0.1:8000
@@ -61,6 +63,18 @@ export async function updateAgentProfile(
 
 export async function deleteAgentProfile(id: number): Promise<void> {
   await http.delete(`/api/agents/${id}`);
+}
+
+export async function fetchSettings(): Promise<SettingsResponse> {
+  const res = await http.get("/api/settings");
+  return res.data as SettingsResponse;
+}
+
+export async function updateSettings(
+  patch: SettingsPatch
+): Promise<SettingsResponse> {
+  const res = await http.patch("/api/settings", patch);
+  return res.data as SettingsResponse;
 }
 
 // WebSocket helper — single shared connection, auto-reconnect

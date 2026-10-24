@@ -517,6 +517,51 @@ export interface AgentProfileInput {
   mem_pages: number;
 }
 
+export interface SchedulerSettings {
+  algorithm: "round_robin" | "fcfs" | "sjf" | "priority";
+  quantum: number;
+  context_switch_overhead: number;
+  max_agents: number;
+}
+
+export interface MemorySettings {
+  allocator: "first_fit" | "best_fit" | "worst_fit";
+  replacement: "fifo" | "lru" | "clock";
+  agent_budget_pages: number;
+  referenced_bit: boolean;
+}
+
+export interface ThemeSettings {
+  name: string;
+  mode: "system" | "light" | "dark";
+  primary_color: string;
+  secondary_color: string;
+  accent_color: string;
+  font_family: string;
+  animations: string;
+  wallpaper: string;
+}
+
+export interface SystemSettings {
+  scheduler: SchedulerSettings;
+  memory: MemorySettings;
+  theme: ThemeSettings;
+}
+
+export interface SettingsPatch {
+  scheduler?: Partial<SchedulerSettings>;
+  memory?: Partial<MemorySettings>;
+  theme?: Partial<ThemeSettings>;
+}
+
+export interface SettingsResponse {
+  ok: boolean;
+  settings: SystemSettings;
+  persisted: boolean;
+  applied?: string[];
+  restart_required?: string[];
+}
+
 export interface KernelSnapshot {
   booted: boolean;
   shutdown: boolean;

@@ -14,7 +14,7 @@ import Terminal from "@/components/windows/Terminal";
 import AgentHub from "@/components/windows/AgentHub";
 import AgentStudio from "@/components/windows/AgentStudio";
 import AgentConsole from "@/components/windows/AgentConsole";
-import Placeholder from "@/components/windows/Placeholder";
+import Settings from "@/components/windows/Settings";
 
 const FIXED: { id: FixedWindowId; title: string; render: () => React.ReactNode }[] = [
   { id: "system-monitor", title: "System Monitor", render: () => <SystemMonitor /> },
@@ -29,7 +29,7 @@ const FIXED: { id: FixedWindowId; title: string; render: () => React.ReactNode }
   { id: "terminal", title: "Terminal", render: () => <Terminal /> },
   { id: "agent-hub", title: "Agent Hub", render: () => <AgentHub /> },
   { id: "agent-studio", title: "Agent Studio", render: () => <AgentStudio /> },
-  { id: "settings", title: "Settings", render: () => <Placeholder title="Settings" milestone="M10b - Backend API Full" /> },
+  { id: "settings", title: "Settings", render: () => <Settings /> },
 ];
 
 const ICONS: { id: FixedWindowId; label: string; icon: string }[] = [
@@ -45,6 +45,7 @@ const ICONS: { id: FixedWindowId; label: string; icon: string }[] = [
   { id: "terminal", label: "Terminal", icon: ">_" },
   { id: "agent-hub", label: "Agent Hub", icon: "AI" },
   { id: "agent-studio", label: "Studio", icon: "AS" },
+  { id: "settings", label: "Settings", icon: "CFG" },
 ];
 
 export default function Desktop() {

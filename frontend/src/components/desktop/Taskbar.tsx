@@ -15,6 +15,7 @@ const MENU: { id: WindowId; label: string; dot: string }[] = [
   { id: "terminal", label: "Terminal", dot: "bg-cyan-400" },
   { id: "agent-hub", label: "Agents", dot: "bg-emerald-300" },
   { id: "agent-studio", label: "Studio", dot: "bg-violet-300" },
+  { id: "settings", label: "Settings", dot: "bg-white/40" },
 ];
 
 export default function Taskbar() {

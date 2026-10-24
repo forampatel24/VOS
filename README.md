@@ -42,10 +42,14 @@ VOS/
 ├── AGENTS.md                   AI development guidelines (rules we follow)
 ├── backend/                    FastAPI bridge (ctypes → kernel)
 │   ├── main.py                 lifecycle: boot kernel, serve REST/WS (/health, /api/*, /ws)
-│   ├── routers/agents.py           Agent Studio profiles REST (/api/agents)
+│   ├── routers/                system, processes, scheduler, memory, filesystem, devices,
+│   │                           interrupts, ipc, shell, agents + live agent runtime
+│   ├── schemas/                typed request/response models for every subsystem
+│   ├── ws/                     channel projections + single live-update hub
 │   └── services/
-│       ├── kernel_loader.py        ctypes bindings + jvk_* wrappers
+│       ├── kernel_loader.py        ctypes bindings + jvk_* wrappers + kernel lock
 │       ├── config_loader.py        merges config/*.json into the jvk_init payload
+│       ├── settings_store.py       SQLite settings + boot overlay + live apply
 │       └── agent_store.py          SQLite persistence for custom agent profiles
 ├── config/                     boot JSON: machine, clock, memory, paging, scheduler, fs, device, ipc, agents, theme, voice
 ├── doc/                        ARCHITECTURE, IMPLEMENTATION_PLAN, PROJECT_SPEC, TEAM_OVERVIEW, FRONTEND_SPEC
@@ -68,7 +72,7 @@ VOS/
 ├── frontend/                   Electron + Vite + React + Tailwind + Zustand + Framer Motion
 │   ├── electron/               main.js (spawns backend) + preload.js
 │   └── src/                    13 fixed windows + dynamic agent consoles + taskbar + desktop
-├── tests/python/               pytest ABI + FastAPI tests (90 tests)
+├── tests/python/               pytest ABI + FastAPI tests (97 tests)
 └── .toolchain/                 local junctions to gcc / nasm (never committed)
 ```
 
@@ -95,7 +99,7 @@ Linux produces `libjarvis_kernel.so`; Windows produces `jarvis_kernel.dll` + `li
 
 ### 2. Run the bridge (FastAPI)
 ```bash
-python -m pytest tests -q        # 90 tests (ABI + API + FS + devices + machine/metrics/budgets + IPC + shell + agents)
+python -m pytest tests -q        # 97 tests (ABI + typed REST + settings + FS + devices + IPC + shell + agents + WS)
 python -m uvicorn backend.main:app --port 8000   # boots the kernel via ctypes + config/*.json
 ```
 
@@ -107,7 +111,11 @@ export PYTHONPATH=/mnt/d/Foram_TP/VOS
 python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
-Endpoints: `GET /health`, `GET /api/snapshot`, `GET /api/config`, `POST /api/command` (flat `{"action": ..., ...}`), `GET /api/tick`, `GET /api/logs`, `GET|POST /api/agents`, `PUT|DELETE /api/agents/{id}`, `WebSocket /ws` (live snapshot/logs, auto-tick every 2.5s).
+Legacy endpoints: `GET /health`, `GET /api/snapshot`, `GET /api/config`, `POST /api/command` (flat `{"action": ..., ...}`), `GET /api/tick`, `GET /api/logs`, `GET|POST /api/agents`, `PUT|DELETE /api/agents/{id}`.
+
+Typed API: `/api/system`, `/api/processes`, `/api/scheduler`, `/api/cpu`, `/api/memory`, `/api/filesystem`, `/api/devices`, `/api/interrupts`, `/api/errors`, `/api/ipc`, `/api/shell`, `/api/agents/runtime|definitions|instances|tasks|launch`, `GET|PATCH /api/settings`. Every route forwards one kernel action; responses are schema-validated.
+
+WebSocket: `/ws` (full snapshot + logs, legacy-compatible) and `/ws/{channel}` for `processes`, `memory`, `cpu`, `logs`, `devices`, `interrupts`, `filesystem`, `ipc`, `agents`, `notifications`, `voice`. One hub auto-ticks every 2s; clients can send `tick`, `snapshot`, `ping` or `command`. Voice reports `available: false` until the voice milestone ships.
 
 ### 3. Run the frontend (Electron + React)
 ```bash
