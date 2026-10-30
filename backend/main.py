@@ -19,6 +19,7 @@ from backend.routers.agents import (
     register_stored_agents,
     router as agents_router,
 )
+from backend.routers.auth import router as auth_router
 from backend.routers.devices import router as devices_router
 from backend.routers.filesystem import router as filesystem_router
 from backend.routers.interrupts import router as interrupts_router
@@ -31,7 +32,7 @@ from backend.routers.system import (
     router as system_router,
     settings_router,
 )
-from backend.services import settings_store
+from backend.services import auth_store, settings_store
 from backend.services.agent_store import init_db
 from backend.services.config_loader import load_config
 from backend.services.kernel_loader import (
@@ -57,6 +58,7 @@ class CommandRequest(BaseModel):
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     settings_store.init_db()
+    auth_store.init_db()
     # config/*.json describe the virtual hardware the kernel boots on.
     # Persisted settings override the boot-time scheduler/memory policy.
     result = jvk_init(settings_store.apply_boot_config(load_config()))
@@ -80,6 +82,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(system_router, prefix="/api/system", tags=["system"])
 app.include_router(settings_router, prefix="/api", tags=["settings"])
 app.include_router(processes_router, prefix="/api/processes", tags=["processes"])

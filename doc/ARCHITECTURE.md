@@ -5911,6 +5911,7 @@ Shipped endpoints
 
 ```
 GET    /health                          kernel snapshot
+POST   /api/auth/login                  single local Admin session
 
 GET    /api/snapshot                    kernel snapshot
 GET    /api/config                      merged boot config
@@ -5919,7 +5920,7 @@ POST   /api/command                     flat JSON ABI passthrough
 GET    /api/tick | POST /api/system/tick
 
 GET    /api/system[/info]               machine, clock, scheduler, counts
-GET    /api/system/logs | POST /api/system/shutdown
+GET    /api/system/logs | POST /api/system/shutdown|restart
 GET    /api/system/settings             persisted settings
 PATCH  /api/system/settings             live apply + persist (alias /api/settings)
 
@@ -5975,6 +5976,13 @@ DELETE /api/agents/instances/{pid}
 Every endpoint validates its request with Pydantic, forwards exactly one
 kernel action or reads the authoritative snapshot, and validates the reply.
 The bridge stores no runtime state.
+
+Authentication is intentionally local and single-user: the bridge owns a
+`users` table in its SQLite settings database, stores an Admin password as a
+PBKDF2-SHA256 hash, and returns only the public user record on login. No
+cloud session or token is invented. `POST /api/system/restart` runs inside the
+same kernel lock as shutdown, re-initializes the kernel from persisted config,
+and re-registers stored Agent Studio profiles.
 
 ---
 

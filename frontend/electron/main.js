@@ -11,7 +11,7 @@ const fs = require("fs");
 
 let mainWindow = null;
 let backendProc = null;
-const BACKEND_PORT = 8000;
+const BACKEND_PORT = Number(process.env.JARVIS_BACKEND_PORT || 8000);
 const BACKEND_HOST = "127.0.0.1";
 const BACKEND_URL = `http://${BACKEND_HOST}:${BACKEND_PORT}/health`;
 
@@ -20,11 +20,20 @@ function waitForBackend(timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
     function poll() {
       const req = http.get(BACKEND_URL, (res) => {
-        if (res.statusCode === 200) {
-          resolve(true);
-        } else {
-          retry();
-        }
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => {
+          body += chunk;
+        });
+        res.on("end", () => {
+          // Require the JARVIS health shape so another service on the same
+          // port (for example a Docker app) is not mistaken for this bridge.
+          if (res.statusCode === 200 && body.includes('"kernel"')) {
+            resolve(true);
+          } else {
+            retry();
+          }
+        });
       });
       req.on("error", retry);
       req.setTimeout(800, retry);
@@ -42,11 +51,23 @@ function waitForBackend(timeoutMs = 15000) {
 
 function spawnBackend() {
   const projectRoot = path.resolve(__dirname, "..", "..");
-  const pythonCandidates = ["python", "python3", "py"];
-  // Try to spawn uvicorn via `python -m uvicorn`. The packaged app would bundle python,
-  // but in dev we rely on the system interpreter + installed backend deps.
+  const venvPython = process.platform === "win32"
+    ? path.join(projectRoot, ".venv", "Scripts", "python.exe")
+    : path.join(projectRoot, ".venv", "bin", "python");
+  const pythonCandidates = [
+    fs.existsSync(venvPython) ? venvPython : null,
+    process.platform === "win32" ? "python" : "python3",
+    "python",
+  ].filter(Boolean);
+  // Try to spawn uvicorn via the project venv. The packaged app would bundle
+  // Python, but in dev the venv holds the bridge dependencies.
   const args = ["-m", "uvicorn", "backend.main:app", "--host", BACKEND_HOST, "--port", String(BACKEND_PORT)];
-  const opts = { cwd: projectRoot, stdio: "pipe", windowsHide: true };
+  const opts = {
+    cwd: projectRoot,
+    stdio: "pipe",
+    windowsHide: true,
+    env: { ...process.env, PYTHONUNBUFFERED: "1" },
+  };
 
   for (const py of pythonCandidates) {
     try {
@@ -124,9 +145,14 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
-  // Try to spawn backend; if it fails, we still open the window (it will show offline state
-  // until the user manually starts `uvicorn backend.main:app`).
-  spawnBackend();
+  // Reuse an already-running JARVIS bridge (for example one started in a
+  // separate terminal); otherwise start the project venv backend.
+  const alreadyRunning = await waitForBackend(800).catch(() => false);
+  if (!alreadyRunning) {
+    spawnBackend();
+  } else {
+    console.log(`[electron] reusing backend on port ${BACKEND_PORT}`);
+  }
 
   try {
     await waitForBackend(12000);

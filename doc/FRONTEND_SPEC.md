@@ -1,8 +1,8 @@
 # JARVIS OS — Frontend Specification
 
-Version: 1.2
-Date: 2026-08-29
-Status: **Adopted** — canonical visual/UX target for all frontend milestones (M11a onward) — *M11a + M4 + M4.5 live as of 2026-08-29*
+Version: 1.3
+Date: 2026-10-24
+Status: **Adopted** — canonical visual/UX target for all frontend milestones (M11a onward) — *M11a–M11b live; all 21 screens implemented as of 2026-10-24*
 
 ---
 
@@ -78,30 +78,31 @@ Status legend: LIVE at mid-sem demo · PARTIAL at mid-sem · ARRIVES-WITH-MILEST
 
 | #  | Screen                       | Status | Backed by |
 | -- | ---------------------------- | ------ | -------------------------------------------- |
-| 1  | Boot Screen                  | M11a   | `/health`, uvicorn lifecycle |
+| 1  | Boot Screen                  | **LIVE (M11a/M11b)** | `/health`, uvicorn lifecycle, failsafe boot → login → desktop |
 | 2  | Command Center / System Monitor | M11a   | snapshot cpu/clock/processes/queues + `machine` panel (M2) + scheduler metrics (M3a) + `/ws` events |
 | 3  | Agent Manager                | **LIVE (M9b)** | Agent Hub: live registry, launch/stop, task queue + pipeline |
 | 4  | Agent Workspace              | **LIVE (M9b)** | Agent Console per pid: task dispatch, trace, report, queue/history, ticks |
 | 5  | Create Agent                 | **LIVE (M9b)** | Agent Studio form → SQLite profile → kernel registry → process launch |
 | 6  | Agent Library                | **LIVE (M9b)** | 9 built-in + custom agents in Agent Hub/Studio |
-| 7  | Process Manager              | M11a   | **kernel done (M3a)** — PCBs, queues, lifecycle commands, MEM column (`mem_pages`/`mem_budget_pages`) |
+| 7  | Process Manager              | **LIVE (M11a)** | PCBs, queues, lifecycle commands, MEM column (`mem_pages`/`mem_budget_pages`) |
 | 8  | CPU & Scheduler              | **LIVE (M4.5)** | clock/quantum + RR/FCFS/SJF/Priority live, `RUNNING/NEXT` + switches + CPU util/avg wait/avg turnaround |
-| 9  | Memory Manager               | M11a   | M3b (frames, page tables, faults, per-agent budgets + page-table policy) |
+| 9  | Memory Manager               | **LIVE (M11a)** | frames, page tables, faults, per-agent budgets + page-table policy |
 | 10 | IPC & Synchronization        | **LIVE (M7)** | queues, shared memory, pipes, mutex/sem, wait-for graph + deadlock recovery |
 | 11 | File Explorer                | **LIVE (M5)** | virtual disk + inode tree, CRUD, permissions, open-file table |
 | 12 | I/O & Device Manager         | **LIVE (M6)** | 8 devices, driver states, I/O dispatch, fault/repair, disk buffer + flush |
 | 13 | Spooling & Buffer Monitor    | **LIVE (M6)** | printer spool + keyboard/display buffers + disk write-back buffer in Device Manager |
 | 14 | Interrupt Center             | **LIVE (M4)** | priority queue + panic + page-fault wiring, 7 IRQs (incl. `context_switch`) + error manager |
-| 15 | Kernel Monitor               | M11a*  | starts as live event stream; enriches every milestone |
-| 16 | System Logs                  | M11a   | `jvk_logs` (exists since M1); search/filter matures M10b |
+| 15 | Kernel Monitor               | **LIVE (M11a)** | live event stream; enriched by every milestone |
+| 16 | System Logs                  | **LIVE (M11a/M10b)** | `jvk_logs`; live stream, filter and notification derivation |
 | 17 | Terminal / JARVIS Shell      | **LIVE (M8)** | kernel shell (`shell_exec`), real prompt/cwd, history, proc/mem/fs/ipc commands |
 | 18 | Device/Hardware View         | **LIVE (M6)** | virtual hardware inventory in Device Manager |
-| 19 | System Settings              | M10b/M11b | config read/write endpoints over `config/*.json` |
-| 20 | System Information           | post-M11a | trivial snapshot extensions |
-| 21 | Shutdown / Restart Screen    | M8/M11b | `shutdown` action + terminal command live; Electron close sequence in M11b |
+| 19 | System Settings              | **LIVE (M10b/M11b)** | config read/write over `config/*.json`, scheduler/memory persistence, live shell accents/font |
+| 20 | System Information           | **LIVE (M11b)** | machine, kernel, memory, storage, agents, interrupts via snapshot + `/api/system/info` |
+| 21 | Shutdown / Restart Screen    | **LIVE (M11b)** | kernel shutdown/restart + real halted overlay, reopen and power-off controls |
 
-**Mid-sem review shows 16 fully-live screens (1–14, 17, 18) plus the live Event Log/Kernel Monitor, with Settings,
-System Information and the Shutdown screen pending — as of 2026-10-23 (M9b complete).**
+**All 21 canonical screens are implemented as of 2026-10-24 (M11b complete).** The desktop adds a single-user
+login (`admin` / `jarvis` on first boot), pinned Dock, Ctrl+K universal search, kernel-log notifications/toasts,
+quick-settings tray, window snapping and live theme accents. Full light mode remains post-MVP polish.
 
 ---
 
@@ -300,8 +301,8 @@ From M4 onward **every kernel milestone ships its UI window in the same mileston
 | M7 IPC                 | #10 (IPC & Sync Lab) |
 | M8 Shell               | #17 (Terminal), #21 command side |
 | M9a/M9b Agents         | #3, #4, #5, #6 |
-| M10b API full          | #19 (settings persistence), mature #15/#16 |
-| M11b Desktop completion | login, snap/dock/search/tray/notifications, #20 |
+| M10b API full          | #19 (settings persistence), mature #15/#16 — LIVE |
+| M11b Desktop completion | login, snap/dock/search/tray/notifications, #20, #21, live theme accents — LIVE |
 
 ## 8. Display Conventions & Reconciliations
 

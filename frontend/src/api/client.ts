@@ -2,10 +2,13 @@ import axios from "axios";
 import type {
   AgentProfile,
   AgentProfileInput,
+  FsEntry,
   KernelSnapshot,
   LogEntry,
+  SessionUser,
   SettingsPatch,
   SettingsResponse,
+  SystemInfoResponse,
 } from "./types";
 
 const API_BASE = ""; // proxied via Vite to 127.0.0.1:8000
@@ -75,6 +78,34 @@ export async function updateSettings(
 ): Promise<SettingsResponse> {
   const res = await http.patch("/api/settings", patch);
   return res.data as SettingsResponse;
+}
+
+export async function login(
+  username: string,
+  password: string
+): Promise<SessionUser> {
+  const res = await http.post("/api/auth/login", { username, password });
+  return res.data.user as SessionUser;
+}
+
+export async function fetchSystemInfo(): Promise<SystemInfoResponse> {
+  const res = await http.get("/api/system/info");
+  return res.data as SystemInfoResponse;
+}
+
+export async function searchFiles(pattern: string): Promise<FsEntry[]> {
+  const res = await http.post("/api/filesystem/search", { pattern });
+  return (res.data.entries as FsEntry[]) ?? [];
+}
+
+export async function shutdownSystem(): Promise<unknown> {
+  const res = await http.post("/api/system/shutdown");
+  return res.data;
+}
+
+export async function restartSystem(): Promise<unknown> {
+  const res = await http.post("/api/system/restart");
+  return res.data;
 }
 
 // WebSocket helper — single shared connection, auto-reconnect

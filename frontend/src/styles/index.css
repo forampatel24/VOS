@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --jarvis-primary: #00ffff;
+  --jarvis-secondary: #0088ff;
+  --jarvis-accent: #ff00ff;
+  --jarvis-font: "Inter", system-ui, sans-serif;
+}
+
 * {
   scrollbar-width: thin;
   scrollbar-color: #1e2a4a #060a14;
@@ -23,7 +30,7 @@
 }
 
 body {
-  font-family: "Inter", system-ui, sans-serif;
+  font-family: var(--jarvis-font);
   background: #060a14;
   overflow: hidden;
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useKernelStore } from "@/store/kernelStore";
+import { useShellStore } from "@/store/shellStore";
 import type { FsEntry } from "@/api/types";
 
 const ROOT_ID = 1;
@@ -16,6 +17,8 @@ const fmtBytes = (bytes: number) => {
 export default function FileExplorer() {
   const snap = useKernelStore((s) => s.snapshot);
   const command = useKernelStore((s) => s.command);
+  const fileTarget = useShellStore((s) => s.fileTarget);
+  const setFileTarget = useShellStore((s) => s.setFileTarget);
 
   const [currentId, setCurrentId] = useState(ROOT_ID);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -50,6 +53,27 @@ export default function FileExplorer() {
       setSelectedId(null);
     }
   }, [entries, currentId]);
+
+  // Global search can hand a path to the explorer; navigate/select it once.
+  useEffect(() => {
+    if (!fileTarget || entries.length === 0) return;
+    const target = entries.find((entry) => entry.path === fileTarget);
+    setFileTarget(null);
+    if (!target) {
+      setMsg(`error: search result vanished: ${fileTarget}`);
+      return;
+    }
+    setSearch("");
+    if (target.type === "dir") {
+      setCurrentId(target.id);
+      setSelectedId(null);
+      setMsg(`opened ${target.path}`);
+    } else {
+      setCurrentId(target.parent || ROOT_ID);
+      setSelectedId(target.id);
+      setMsg(`selected ${target.path}`);
+    }
+  }, [fileTarget, entries, setFileTarget]);
 
   // Load the editor content when a different file is selected.
   useEffect(() => {

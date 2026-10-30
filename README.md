@@ -71,8 +71,8 @@ VOS/
 │   └── tests/                  C smoke tests (cpu, process, memory, interrupts, filesystem, devices, ipc, shell, system, agents)
 ├── frontend/                   Electron + Vite + React + Tailwind + Zustand + Framer Motion
 │   ├── electron/               main.js (spawns backend) + preload.js
-│   └── src/                    13 fixed windows + dynamic agent consoles + taskbar + desktop
-├── tests/python/               pytest ABI + FastAPI tests (97 tests)
+│   └── src/                    14 fixed windows + dynamic agent consoles + boot/login/dock/taskbar desktop
+├── tests/python/               pytest ABI + FastAPI tests (99 tests)
 └── .toolchain/                 local junctions to gcc / nasm (never committed)
 ```
 
@@ -99,7 +99,7 @@ Linux produces `libjarvis_kernel.so`; Windows produces `jarvis_kernel.dll` + `li
 
 ### 2. Run the bridge (FastAPI)
 ```bash
-python -m pytest tests -q        # 97 tests (ABI + typed REST + settings + FS + devices + IPC + shell + agents + WS)
+python -m pytest tests -q        # 99 tests (ABI + typed REST + settings + FS + devices + IPC + shell + agents + auth + WS)
 python -m uvicorn backend.main:app --port 8000   # boots the kernel via ctypes + config/*.json
 ```
 
@@ -111,9 +111,17 @@ export PYTHONPATH=/mnt/d/Foram_TP/VOS
 python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
+If port `8000` is already used by another project, choose another port and use the
+same value for the backend, Vite proxy and Electron:
+
+```bash
+export JARVIS_BACKEND_PORT=8010
+python -m uvicorn backend.main:app --host 127.0.0.1 --port "$JARVIS_BACKEND_PORT"
+```
+
 Legacy endpoints: `GET /health`, `GET /api/snapshot`, `GET /api/config`, `POST /api/command` (flat `{"action": ..., ...}`), `GET /api/tick`, `GET /api/logs`, `GET|POST /api/agents`, `PUT|DELETE /api/agents/{id}`.
 
-Typed API: `/api/system`, `/api/processes`, `/api/scheduler`, `/api/cpu`, `/api/memory`, `/api/filesystem`, `/api/devices`, `/api/interrupts`, `/api/errors`, `/api/ipc`, `/api/shell`, `/api/agents/runtime|definitions|instances|tasks|launch`, `GET|PATCH /api/settings`. Every route forwards one kernel action; responses are schema-validated.
+Typed API: `/api/auth/login`, `/api/system`, `/api/processes`, `/api/scheduler`, `/api/cpu`, `/api/memory`, `/api/filesystem`, `/api/devices`, `/api/interrupts`, `/api/errors`, `/api/ipc`, `/api/shell`, `/api/agents/runtime|definitions|instances|tasks|launch`, `GET|PATCH /api/settings`, `POST /api/system/shutdown|restart`. Every route forwards one kernel action; responses are schema-validated. The single local Admin user is stored in SQLite with PBKDF2-SHA256; default passcode `jarvis`, overridable with `JARVIS_ADMIN_PASSWORD` on first boot.
 
 WebSocket: `/ws` (full snapshot + logs, legacy-compatible) and `/ws/{channel}` for `processes`, `memory`, `cpu`, `logs`, `devices`, `interrupts`, `filesystem`, `ipc`, `agents`, `notifications`, `voice`. One hub auto-ticks every 2s; clients can send `tick`, `snapshot`, `ping` or `command`. Voice reports `available: false` until the voice milestone ships.
 
@@ -124,11 +132,25 @@ npm install
 npm run dev
 ```
 
+Open `http://localhost:5173` in the browser for the quickest dev loop. For the real
+Electron desktop window, keep Vite running and use a second WSL terminal:
+
+```bash
+cd frontend
+npm run electron
+```
+
+Electron reuses a running bridge or starts one through the project `.venv`. On WSL,
+Electron requires WSLg plus the usual Chromium runtime libraries (`libnss3`, `libgbm1`,
+`libgtk-3-0`, ...). If port `8000` is busy, export `JARVIS_BACKEND_PORT` in every terminal.
+
 ---
 
 ## Apps & Agents
 
-**12 apps:** File Explorer · Task Manager · Memory Viewer · CPU Monitor · System Monitor (live process dashboard) · Device Manager · Terminal · IPC & Sync Lab · Settings · Agent Hub · Agent Studio · Agent Consoles.
+**14 windows:** System Monitor · Process Manager · Memory Viewer · CPU & Scheduler · Event Log · File Explorer · Device Manager · Interrupt Center · IPC & Sync Lab · Terminal · Agent Hub · Agent Studio · Settings · System Information — plus dynamic Agent Consoles.
+
+The desktop adds a stale-free boot → login → desktop flow, pinned Dock, Ctrl+K search across apps/agents/virtual files, kernel-log notifications and toasts, quick-settings tray, live clock, window snapping/maximize/minimize, and real shutdown/restart screens. Theme accents and font are persisted in SQLite and applied live to the shell.
 
 **9 built-in agents:** Finance · Coding · Research · Writing · HR · Legal · Marketing · Travel · Health — plus unlimited user-created agents via Agent Studio.
 
@@ -145,7 +167,7 @@ Every launched agent is a real simulated process: PCB, PID, scheduling, virtual 
 | MVP | M5 Virtual Filesystem & Disk · M6 Devices & Drivers | ✅ Completed — File Explorer + Device Manager live; config-driven devices + disk write buffer; 70 pytest + 7 C smokes |
 | MVP | M7 IPC & Synchronization · M8 Shell & CLI | ✅ Completed — IPC Lab (queues, shared memory, pipes, mutex/semaphore, wait-for graph, deadlock recovery) and Terminal (kernel shell) live; 90 pytest + 10 C smokes as of M9b |
 | MVP | M9a Agent Core · M9b Consoles & Tools | ✅ Completed — 9 built-in agents, kernel task pipeline, Agent Hub, Agent Studio (SQLite profiles), dynamic per-pid consoles; 90 pytest + 10 C smokes |
-| MVP | M10b API · M11b Desktop | ▶ Next: M10b Backend API Full, then M11b Desktop completion |
+| MVP | M10b API · M11b Desktop | ✅ Completed — typed REST/WS surface, single-user login, Dock/search/notifications/tray, window snapping, live theme accents, shutdown/restart; 99 pytest + 10 C smokes |
 | Post-MVP | M10a Voice · M12 AI & Gemini · M13 Testing/Packaging · M14 Docs/Release · M15 Future | ○ Pending |
 
 The MVP is the **clickable OS for AI agents**; voice and AI reasoning come after.
@@ -154,7 +176,7 @@ The MVP is the **clickable OS for AI agents**; voice and AI reasoning come after
 
 ## The Demo
 
-Boot → open Agent Hub → click an agent → watch its console open while the **System Monitor dashboard** shows its live registers, page tables, queue position, context switches and kernel events → open Task Manager to prove multiple agents run as real processes. IPC Lab demonstrates blocked queues and deadlock recovery; the Terminal runs the same kernel commands. Full script in `doc/TEAM_OVERVIEW.md`.
+Boot → log in (`admin` / `jarvis`) → open Agent Hub from the Dock → click an agent → watch its console open while the **System Monitor dashboard** shows its live registers, page tables, queue position, context switches and kernel events → open Process Manager to prove multiple agents run as real processes. Ctrl+K searches apps/agents/files; the tray shows kernel state and powers the machine; IPC Lab demonstrates blocked queues and deadlock recovery; the Terminal runs the same kernel commands. Full script in `doc/TEAM_OVERVIEW.md`.
 
 ---
 

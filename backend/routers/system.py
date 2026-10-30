@@ -29,7 +29,13 @@ from backend.schemas.system import (
 )
 from backend.services import settings_store
 from backend.services.config_loader import load_config
-from backend.services.kernel_loader import jvk_logs, jvk_snapshot
+from backend.services.kernel_loader import (
+    jvk_init,
+    jvk_logs,
+    jvk_shutdown,
+    jvk_snapshot,
+    kernel_lock,
+)
 
 router = APIRouter()
 
@@ -101,6 +107,25 @@ def system_tick(payload: TickRequest) -> dict:
 @router.post("/shutdown", response_model=KernelReply)
 def system_shutdown() -> dict:
     return kernel_action("shutdown")
+
+
+@router.post("/restart", response_model=TickResponse)
+def system_restart() -> dict:
+    """Reboot the kernel in place, re-applying persisted boot settings."""
+    with kernel_lock():
+        jvk_shutdown()
+        result = jvk_init(settings_store.apply_boot_config(load_config()))
+        if result != "ok":
+            raise HTTPException(
+                status_code=500, detail=f"kernel reboot failed: {result}"
+            )
+        # Custom Agent Studio profiles are durable; re-register them with the
+        # fresh kernel registry after the built-ins have been seeded.
+        from backend.routers.agents import register_stored_agents
+
+        register_stored_agents()
+        snapshot = jvk_snapshot()
+    return {"ok": True, "snapshot": snapshot}
 
 
 def _merge(base: dict, extra: dict) -> dict:

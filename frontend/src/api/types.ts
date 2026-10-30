@@ -593,3 +593,30 @@ export interface CommandResult {
   error?: string;
   [key: string]: unknown;
 }
+
+/* ---- M11b desktop session / system information ----------------------- */
+
+export interface SessionUser {
+  id: number;
+  username: string;
+  display_name: string;
+  role: string;
+}
+
+export interface LoginResponse {
+  ok: boolean;
+  user: SessionUser;
+}
+
+export interface SystemInfoResponse {
+  ok: boolean;
+  kernel: string;
+  booted: boolean;
+  shutdown: boolean;
+  uptime_ticks: number;
+  machine: MachineSnapshot;
+  clock: ClockSnapshot;
+  scheduler: SchedulerSnapshot;
+  config: Record<string, unknown>;
+  counts: Record<string, number>;
+}

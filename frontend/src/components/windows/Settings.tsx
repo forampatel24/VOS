@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { fetchSettings, updateSettings } from "@/api/client";
 import type { SystemSettings } from "@/api/types";
 import { useKernelStore } from "@/store/kernelStore";
+import { useThemeStore } from "@/store/themeStore";
 
 const ALGORITHMS: SystemSettings["scheduler"]["algorithm"][] = [
   "round_robin",
@@ -80,6 +81,7 @@ function Choice<T extends string>({ value, options, onChange }: { value: T; opti
 export default function Settings() {
   const snapshot = useKernelStore((state) => state.snapshot);
   const refreshSnapshot = useKernelStore((state) => state.refreshSnapshot);
+  const applyTheme = useThemeStore((state) => state.apply);
   const [draft, setDraft] = useState<SystemSettings | null>(null);
   const [persisted, setPersisted] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -90,6 +92,7 @@ export default function Settings() {
     try {
       const response = await fetchSettings();
       setDraft(response.settings);
+      applyTheme(response.settings.theme);
       setPersisted(response.persisted);
       setRestartRequired([]);
       setStatus(null);
@@ -109,12 +112,14 @@ export default function Settings() {
       const response = await updateSettings({
         scheduler: draft.scheduler,
         memory: draft.memory,
+        theme: draft.theme,
       });
       setDraft(response.settings);
+      applyTheme(response.settings.theme);
       setPersisted(response.persisted);
       setRestartRequired(response.restart_required ?? []);
       const applied = response.applied && response.applied.length > 0 ? response.applied.join(", ") : "no live change";
-      setStatus({ tone: "ok", text: `Saved. Applied: ${applied}.` });
+      setStatus({ tone: "ok", text: `Saved. Applied: ${applied}. Theme applied to shell.` });
       await refreshSnapshot();
     } catch (error) {
       setStatus({ tone: "error", text: errorText(error) });
@@ -135,6 +140,8 @@ export default function Settings() {
     setDraft((current) => current && { ...current, scheduler: { ...current.scheduler, ...patch } });
   const updateMemory = (patch: Partial<SystemSettings["memory"]>) =>
     setDraft((current) => current && { ...current, memory: { ...current.memory, ...patch } });
+  const updateTheme = (patch: Partial<SystemSettings["theme"]>) =>
+    setDraft((current) => current && { ...current, theme: { ...current.theme, ...patch } });
 
   return (
     <div className="flex h-full flex-col gap-2 overflow-y-auto p-3">
@@ -203,24 +210,38 @@ export default function Settings() {
       </div>
 
       <div className="rounded-lg border border-[#1e2a4a] bg-[#0d1225] p-3">
-        <div className="mono mb-2 text-xs font-semibold tracking-widest text-amber-300">APPEARANCE (STORED)</div>
-        <div className="grid grid-cols-2 gap-2 mono text-[11px] text-white/60">
-          <div className="rounded border border-[#1e2a4a] bg-[#141b34] px-3 py-2">
-            <div className="text-[10px] tracking-widest text-white/30">THEME</div>
-            <div className="text-white/80">{draft.theme.name} · {draft.theme.mode}</div>
-          </div>
-          <div className="rounded border border-[#1e2a4a] bg-[#141b34] px-3 py-2">
-            <div className="text-[10px] tracking-widest text-white/30">ACCENTS</div>
-            <div className="flex items-center gap-1.5">
-              {[draft.theme.primary_color, draft.theme.secondary_color, draft.theme.accent_color].map((color) => (
-                <span key={color} className="h-3 w-3 rounded-full border border-white/20" style={{ background: color }} />
-              ))}
-              <span className="text-white/60">{draft.theme.primary_color}</span>
-            </div>
-          </div>
+        <div className="mono mb-2 text-xs font-semibold tracking-widest text-amber-300">APPEARANCE (LIVE)</div>
+        <div className="grid gap-1.5">
+          {(
+            [
+              ["Primary accent", "primary_color"],
+              ["Secondary accent", "secondary_color"],
+              ["Highlight accent", "accent_color"],
+            ] as const
+          ).map(([label, key]) => (
+            <Field key={key} label={label} hint="applied to shell chrome on save">
+              <div className="flex items-center gap-2">
+                <span className="mono text-[10px] text-white/40">{draft.theme[key]}</span>
+                <input
+                  type="color"
+                  value={draft.theme[key]}
+                  onChange={(event) => updateTheme({ [key]: event.target.value })}
+                  className="h-7 w-12 cursor-pointer rounded border border-[#1e2a4a] bg-[#060a14] p-0.5"
+                />
+              </div>
+            </Field>
+          ))}
+          <Field label="Interface font" hint="CSS font-family for desktop text">
+            <input
+              value={draft.theme.font_family}
+              onChange={(event) => updateTheme({ font_family: event.target.value.slice(0, 96) })}
+              className="w-56 rounded border border-[#1e2a4a] bg-[#060a14] px-2 py-1 mono text-[10px] text-cyan-200 outline-none focus:border-cyan-400/50"
+              spellCheck={false}
+            />
+          </Field>
         </div>
         <div className="mono mt-2 text-[10px] text-white/25">
-          Theme values persist through the same table; the desktop theme engine consumes them in the shell layer.
+          Stored in SQLite and applied by the shell theme engine. Light mode is post-MVP polish.
         </div>
       </div>
 
